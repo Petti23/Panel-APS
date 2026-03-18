@@ -45,7 +45,11 @@ export const classifyRow = (row, headerMap, documentTitle) => {
         if (uniqueValues.length <= 2) { // 1 o 2 valores unicos (a veces hay un separador o algo)
             const value = String(nonEmptyCells[0]);
             const normValue = uniqueValues[0];
-            const catKeywords = ['infantil', 'juvenil', 'primera', 'division', 'cadete', 'kdt', 'escuelita', 'lanzamiento', 'femenina', 'torneo', 'u23', 'preinfantil'];
+            const catKeywords = [
+                'infantil', 'juvenil', 'primera', 'division', 'cadete', 'kdt', 
+                'escuelita', 'lanzamiento', 'femenina', 'torneo', 'u23', 
+                'preinfantil', 'lento'
+            ];
             
             if (catKeywords.some(kw => normValue.includes(kw))) {
                 return { type: 'category_title', value };

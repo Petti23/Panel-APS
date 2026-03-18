@@ -2,6 +2,7 @@ import { extractSheetMatrix } from '../../services/excel/extractSheetMatrix';
 import { normalizeMergedCells } from '../../services/excel/normalizeMergedCells';
 import { detectDocumentTitle, detectSections } from '../../services/excel/scheduleSectionDetector';
 import { parseSection } from '../../services/excel/scheduleParser';
+import { mapCategoryAndTournament } from '../../utils/schedule/categoryMapper';
 
 export const sheetToScheduleModel = (workbook) => {
     const { matrix, worksheet } = extractSheetMatrix(workbook, 0);
@@ -21,6 +22,12 @@ export const sheetToScheduleModel = (workbook) => {
 
     sections.forEach(section => {
         const result = parseSection(section);
+        const { category, tournamentName } = mapCategoryAndTournament(section.title);
+        
+        // Enrich the block with mapped data
+        result.block.category = category;
+        result.block.tournamentName = tournamentName;
+        
         categorias.push(result.block);
         
         estadisticas.categoriasDetectadas++;

@@ -36,6 +36,32 @@ export const DataProvider = ({ children }) => {
     useEffect(() => { localStorage.setItem('players', JSON.stringify(players)) }, [players])
     useEffect(() => { localStorage.setItem('games', JSON.stringify(games)) }, [games])
 
+    // Migration Effect: Normalize existing data labels to official categories
+    useEffect(() => {
+        // Use dynamic import for the utility to avoid circular dependencies if any
+        import('../utils/schedule/categoryMapper.js').then(({ mapCategoryAndTournament }) => {
+            const migrate = (setter) => {
+                setter(prevItems => {
+                    let changed = false;
+                    const newItems = prevItems.map(item => {
+                        if (!item.category) return item;
+                        const { category } = mapCategoryAndTournament(item.category);
+                        if (category !== item.category && category !== 'Desconocido') {
+                            changed = true;
+                            return { ...item, category };
+                        }
+                        return item;
+                    });
+                    return changed ? newItems : prevItems;
+                });
+            };
+
+            migrate(setTournaments);
+            migrate(setTeams);
+            migrate(setPlayers);
+        }).catch(err => console.error("Migration failed:", err));
+    }, []);
+
     // Actions
     // Use functional updates to avoid closure staleness issues (e.g. inside loops)
 
@@ -97,15 +123,22 @@ export const DataProvider = ({ children }) => {
         data.categorias.forEach(cat => {
             if (cat.estado !== 'con_partidos' || cat.partidos.length === 0) return;
 
-            const normCat = normalizeText(cat.categoria);
-            let tournament = currentTournaments.find(t => normalizeText(t.category) === normCat);
+            // Use the mapped category if available (from our new categoryMapper)
+            const officialCategory = cat.category || cat.categoria;
+            const officialTournamentName = cat.tournamentName || `${cat.categoria} ${cat.torneo || ''} ${cat.anio || ''}`.trim();
+            
+            const normCat = normalizeText(officialCategory);
+            // Search for existing tournament using the official category and name
+            let tournament = currentTournaments.find(t => 
+                normalizeText(t.category) === normCat && 
+                normalizeText(t.name) === normalizeText(officialTournamentName)
+            );
 
             if (!tournament) {
-                const tournamentName = `${cat.categoria} ${cat.torneo || ''} ${cat.anio || ''}`.trim();
                 tournament = { 
                     id: baseId + (counter++), 
-                    name: tournamentName, 
-                    category: cat.categoria 
+                    name: officialTournamentName, 
+                    category: officialCategory 
                 };
                 currentTournaments.push(tournament);
             }
@@ -117,7 +150,7 @@ export const DataProvider = ({ children }) => {
                     homeTeam = { 
                         id: baseId + (counter++), 
                         name: p.local, 
-                        category: cat.categoria 
+                        category: officialCategory 
                     };
                     currentTeams.push(homeTeam);
                 }
@@ -128,7 +161,7 @@ export const DataProvider = ({ children }) => {
                     visitorTeam = { 
                         id: baseId + (counter++), 
                         name: p.visitante, 
-                        category: cat.categoria 
+                        category: officialCategory 
                     };
                     currentTeams.push(visitorTeam);
                 }

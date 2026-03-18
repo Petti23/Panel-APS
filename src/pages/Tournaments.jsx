@@ -4,6 +4,7 @@ import { Plus, Edit2, Trash2, Calendar } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useData } from '../context/DataContext'
 import { CATEGORIES } from '../constants/categories'
+import { normalizeText } from '../utils/schedule/normalizeText'
 import '../components/Table.css'
 
 const Tournaments = () => {
@@ -89,7 +90,7 @@ const Tournaments = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {tournaments.filter(t => !filterCategory || t.category === filterCategory).length === 0 ? (
+                        {tournaments.filter(t => !filterCategory || normalizeText(t.category) === normalizeText(filterCategory)).length === 0 ? (
                             <tr>
                                 <td colSpan="5" style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-secondary)' }}>
                                     <div style={{ marginBottom: '1rem', opacity: 0.2 }}><Calendar size={48} style={{ margin: '0 auto' }} /></div>
@@ -98,7 +99,7 @@ const Tournaments = () => {
                             </tr>
                         ) : (
                             tournaments
-                                .filter(t => !filterCategory || t.category === filterCategory)
+                                .filter(t => !filterCategory || normalizeText(t.category) === normalizeText(filterCategory))
                                 .map((t) => (
                                 <tr key={t.id}>
                                     <td style={{ fontWeight: 700, fontSize: '1.05rem', paddingLeft: '1.5rem' }}>{t.name}</td>

@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, Calendar, Clock, MapPin, Upload } from 'lucide-rea
 import Modal from '../components/Modal'
 import { useData } from '../context/DataContext'
 import { CATEGORIES } from '../constants/categories'
+import { normalizeText } from '../utils/schedule/normalizeText'
 import '../components/Table.css'
 import ExcelScheduleUploader from '../components/ExcelScheduleUploader'
 
@@ -85,7 +86,8 @@ const Games = () => {
     // 1. Filter games
     const filteredGames = games.filter(g => {
         const matchesTournament = !filterTournament || g.tournamentId == filterTournament;
-        const matchesCategory = !filterCategory || getTournamentCategory(g.tournamentId) === filterCategory;
+        const tournamentCat = getTournamentCategory(g.tournamentId);
+        const matchesCategory = !filterCategory || normalizeText(tournamentCat) === normalizeText(filterCategory);
         const matchesDate = !filterDate || g.date === filterDate;
         return matchesTournament && matchesCategory && matchesDate;
     }).sort((a, b) => {
@@ -143,7 +145,7 @@ const Games = () => {
                         <select value={filterTournament} onChange={(e) => setFilterTournament(e.target.value)}>
                             <option value="">Todos los torneos</option>
                             {tournaments
-                                .filter(t => !filterCategory || t.category === filterCategory)
+                                .filter(t => !filterCategory || normalizeText(t.category) === normalizeText(filterCategory))
                                 .map(t => (
                                     <option key={t.id} value={t.id}>{t.name}</option>
                                 ))

@@ -1,11 +1,14 @@
 export const CATEGORIES = [
+    "Escuelita",
+    "Preinfantil",
+    "Infantil",
     "Cadete",
-    "Juvenil",
+    "Juveniles",
     "U23",
+    "Primera Division (Primera A)",
+    "Primera \"B\"",
     "Primera Femenino",
-    "Primera B",
-    "Primera A",
-    "Lento +35 Masculino",
-    "Lento +35 Femenino",
-    "Lento +45 Masculino"
+    "Lanzamiento Lento +35",
+    "Lanzamiento Lento +48",
+    "Lanzamiento Lento +35 Femenino"
 ];
