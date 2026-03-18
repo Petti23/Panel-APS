@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Calendar, Clock, MapPin } from 'lucide-react'
+import { Plus, Edit2, Trash2, Calendar, Clock, MapPin, Upload } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useData } from '../context/DataContext'
 import '../components/Table.css'
+import ExcelScheduleUploader from '../components/ExcelScheduleUploader'
 
 const Games = () => {
     const { games, tournaments, teams, addGame, updateGame, deleteGame } = useData()
 
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
     const [currentGame, setCurrentGame] = useState(null)
 
     const [formData, setFormData] = useState({
@@ -80,10 +82,16 @@ const Games = () => {
         <div className="animate-fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <h2 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Partidos</h2>
-                <button onClick={() => handleOpenModal()} className="btn btn-primary">
-                    <Plus size={20} />
-                    Nuevo Partido
-                </button>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button onClick={() => setIsExcelModalOpen(true)} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Upload size={20} />
+                        Subir Excel
+                    </button>
+                    <button onClick={() => handleOpenModal()} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Plus size={20} />
+                        Nuevo Partido
+                    </button>
+                </div>
             </div>
 
             <div className="card table-container">
@@ -252,6 +260,14 @@ const Games = () => {
                         <button type="submit" className="btn btn-primary">{currentGame ? 'Guardar Cambios' : 'Agendar Partido'}</button>
                     </div>
                 </form>
+            </Modal>
+
+            <Modal isOpen={isExcelModalOpen} onClose={() => setIsExcelModalOpen(false)} title="Importar Programación">
+                <ExcelScheduleUploader onUpload={(data) => {
+                    console.log('Datos importados:', data)
+                    alert("Programación parseada con éxito. Revisa la consola para ver el JSON final.");
+                    setIsExcelModalOpen(false);
+                }} />
             </Modal>
         </div>
     )

@@ -13,12 +13,14 @@
 
 .modal-content {
     width: 100%;
-    max-width: 32rem;
-    /* max-w-lg */
+    max-width: 48rem; /* Keep the wider width for preview */
     background-color: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    max-height: 90vh; /* Ensure it doesn't exceed viewport */
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
