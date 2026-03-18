@@ -11,6 +11,7 @@ const Tournaments = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [currentTournament, setCurrentTournament] = useState(null)
+    const [filterCategory, setFilterCategory] = useState('')
     const [formData, setFormData] = useState({ name: '', category: CATEGORIES[0], startDate: '', endDate: '' })
 
     const handleOpenModal = (tournament = null) => {
@@ -52,61 +53,84 @@ const Tournaments = () => {
 
     return (
         <div className="animate-fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', width: '100%' }}>
-                <h2 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Torneos</h2>
-                <button onClick={() => handleOpenModal()} className="btn btn-primary">
-                    <Plus size={20} />
-                    Nuevo Torneo
-                </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', flexWrap: 'wrap', gap: '1.5rem' }}>
+                <h1 style={{ fontSize: '2.25rem' }}>Gestión de Torneos</h1>
+                
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Filtrar:</span>
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            style={{ width: 'auto', minWidth: '220px' }}
+                        >
+                            <option value="">Todas las Categorías</option>
+                            {CATEGORIES.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <button onClick={() => handleOpenModal()} className="btn btn-primary">
+                        <Plus size={20} />
+                        Nuevo Torneo
+                    </button>
+                </div>
             </div>
 
-            <div className="card table-container">
+            <div className="table-container">
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>Nombre</th>
-                            <th>Categoría</th>
-                            <th>Fecha Inicio</th>
-                            <th>Fecha Fin</th>
-                            <th style={{ textAlign: 'right' }}>Acciones</th>
+                            <th style={{ width: '30%' }}>Nombre del Torneo</th>
+                            <th style={{ width: '20%' }}>Categoría</th>
+                            <th style={{ width: '20%' }}>Fecha Inicio</th>
+                            <th style={{ width: '15%' }}>Fecha Fin</th>
+                            <th style={{ width: '15%', textAlign: 'right' }}>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {tournaments.length === 0 ? (
+                        {tournaments.filter(t => !filterCategory || t.category === filterCategory).length === 0 ? (
                             <tr>
-                                <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                                    No hay torneos registrados
+                                <td colSpan="5" style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-secondary)' }}>
+                                    <div style={{ marginBottom: '1rem', opacity: 0.2 }}><Calendar size={48} style={{ margin: '0 auto' }} /></div>
+                                    No hay torneos registrados {filterCategory ? `en la categoría ${filterCategory}` : ''}
                                 </td>
                             </tr>
                         ) : (
-                            tournaments.map((t) => (
+                            tournaments
+                                .filter(t => !filterCategory || t.category === filterCategory)
+                                .map((t) => (
                                 <tr key={t.id}>
-                                    <td style={{ fontWeight: 500 }}>{t.name}</td>
+                                    <td style={{ fontWeight: 700, fontSize: '1.05rem', paddingLeft: '1.5rem' }}>{t.name}</td>
                                     <td>
                                         <span style={{
-                                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                            backgroundColor: 'var(--bg-primary)',
                                             color: 'var(--accent)',
-                                            padding: '0.25rem 0.75rem',
-                                            borderRadius: '1rem',
+                                            padding: '0.35rem 0.85rem',
+                                            borderRadius: 'var(--radius-sm)',
                                             fontSize: '0.75rem',
-                                            fontWeight: 600
+                                            fontWeight: 800,
+                                            textTransform: 'uppercase',
+                                            border: '1px solid var(--border-light)'
                                         }}>
                                             {t.category}
                                         </span>
                                     </td>
                                     <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <Calendar size={16} style={{ color: 'var(--text-secondary)' }} />
-                                            {t.startDate}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 600 }}>
+                                            <Calendar size={16} style={{ color: 'var(--primary)' }} />
+                                            {new Date(t.startDate + 'T00:00:00').toLocaleDateString('es-AR')}
                                         </div>
                                     </td>
-                                    <td>{t.endDate}</td>
+                                    <td style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                        {new Date(t.endDate + 'T00:00:00').toLocaleDateString('es-AR')}
+                                    </td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
-                                            <button onClick={() => handleOpenModal(t)} className="btn-icon">
+                                            <button onClick={() => handleOpenModal(t)} className="btn-icon" title="Editar">
                                                 <Edit2 size={18} />
                                             </button>
-                                            <button onClick={() => handleDelete(t.id)} className="btn-icon delete">
+                                            <button onClick={() => handleDelete(t.id)} className="btn-icon delete" title="Eliminar">
                                                 <Trash2 size={18} />
                                             </button>
                                         </div>

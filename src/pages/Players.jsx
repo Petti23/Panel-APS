@@ -77,101 +77,123 @@ const Players = () => {
 
     return (
         <div className="animate-fade-in">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Jugadores</h2>
+            <div style={{ marginBottom: '2.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h1 style={{ fontSize: '2.25rem' }}>Registro de Jugadores</h1>
                     <button onClick={() => handleOpenModal()} className="btn btn-primary">
                         <Plus size={20} />
                         Nuevo Jugador
                     </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                    <select
-                        value={filterCategory}
-                        onChange={(e) => {
-                            setFilterCategory(e.target.value)
-                            setFilterTeam('Todos')
-                        }}
-                        style={{ width: 'auto', minWidth: '200px' }}
-                    >
-                        <option value="Todas">Todas las Categorías</option>
-                        {CATEGORIES.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                    </select>
+                <div className="card" style={{ padding: '1.25rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end', border: '1px solid var(--border)' }}>
+                    <div style={{ flex: '1', minWidth: '200px' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Categoría</label>
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => {
+                                setFilterCategory(e.target.value)
+                                setFilterTeam('Todos')
+                            }}
+                        >
+                            <option value="Todas">Todas las Categorías</option>
+                            {CATEGORIES.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
+                    </div>
 
-                    <select
-                        value={filterTeam}
-                        onChange={(e) => setFilterTeam(e.target.value)}
-                        style={{ width: 'auto', minWidth: '200px' }}
-                    >
-                        <option value="Todos">Todos los Equipos</option>
-                        {teamsForFilter.map(team => (
-                            <option key={team.id} value={team.id}>{team.name}</option>
-                        ))}
-                    </select>
+                    <div style={{ flex: '1', minWidth: '200px' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Equipo</label>
+                        <select
+                            value={filterTeam}
+                            onChange={(e) => setFilterTeam(e.target.value)}
+                        >
+                            <option value="Todos">Todos los Equipos</option>
+                            {teamsForFilter.map(team => (
+                                <option key={team.id} value={team.id}>{team.name}</option>
+                            ))}
+                        </select>
+                    </div>
 
-                    <div style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                        <input
-                            type="text"
-                            placeholder="Buscar por nombre o DNI..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{ paddingLeft: '2.5rem', width: '100%' }}
-                        />
+                    <div style={{ flex: '2', minWidth: '300px', position: 'relative' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Búsqueda Rápida</label>
+                        <div style={{ position: 'relative' }}>
+                            <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Nombre o DNI..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ paddingLeft: '2.8rem', width: '100%' }}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div className="card table-container">
+            <div className="table-container">
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>Nombre Completo</th>
-                            <th>DNI</th>
-                            <th>Equipo</th>
-                            <th>Categoría</th>
-                            <th style={{ textAlign: 'right' }}>Acciones</th>
+                            <th style={{ width: '35%', paddingLeft: '1.5rem' }}>Jugador</th>
+                            <th style={{ width: '15%' }}>DNI</th>
+                            <th style={{ width: '20%' }}>Equipo</th>
+                            <th style={{ width: '18%' }}>Categoría</th>
+                            <th style={{ width: '12%', textAlign: 'right' }}>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         {filteredPlayers.length === 0 ? (
                             <tr>
-                                <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                                    No hay jugadores encontrados
+                                <td colSpan="5" style={{ textAlign: 'center', padding: '5rem', color: 'var(--text-secondary)' }}>
+                                    <div style={{ marginBottom: '1rem', opacity: 0.2 }}><User size={48} style={{ margin: '0 auto' }} /></div>
+                                    No se encontraron jugadores
                                 </td>
                             </tr>
                         ) : (
                             filteredPlayers.map((p) => (
                                 <tr key={p.id}>
-                                    <td style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                        <div style={{ padding: '0.5rem', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '50%' }}>
-                                            <User size={16} />
+                                    <td style={{ fontWeight: 700, fontSize: '1.05rem', paddingLeft: '1.5rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <div style={{ 
+                                                width: '36px', 
+                                                height: '36px', 
+                                                backgroundColor: 'var(--bg-primary)', 
+                                                borderRadius: '50%',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: 'var(--primary)',
+                                                border: '1px solid var(--border-light)'
+                                            }}>
+                                                <User size={18} />
+                                            </div>
+                                            {p.fullName}
                                         </div>
-                                        {p.fullName}
                                     </td>
-                                    <td>{p.dni}</td>
-                                    <td>{getTeamName(p.teamId)}</td>
+                                    <td style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem' }}>{p.dni}</td>
+                                    <td style={{ fontWeight: 600 }}>{getTeamName(p.teamId)}</td>
                                     <td>
                                         <span style={{
-                                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                            backgroundColor: 'var(--bg-primary)',
                                             color: 'var(--accent)',
-                                            padding: '0.25rem 0.75rem',
-                                            borderRadius: '1rem',
+                                            padding: '0.35rem 0.85rem',
+                                            borderRadius: 'var(--radius-sm)',
                                             fontSize: '0.75rem',
-                                            fontWeight: 600
+                                            fontWeight: 800,
+                                            textTransform: 'uppercase',
+                                            border: '1px solid var(--border-light)'
                                         }}>
                                             {p.category}
                                         </span>
                                     </td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
-                                            <button onClick={() => handleOpenModal(p)} className="btn-icon">
+                                            <button onClick={() => handleOpenModal(p)} className="btn-icon" title="Editar">
                                                 <Edit2 size={18} />
                                             </button>
-                                            <button onClick={() => handleDelete(p.id)} className="btn-icon delete">
+                                            <button onClick={() => handleDelete(p.id)} className="btn-icon delete" title="Eliminar">
                                                 <Trash2 size={18} />
                                             </button>
                                         </div>

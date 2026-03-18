@@ -1,52 +1,64 @@
 .modal-overlay {
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1rem;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    animation: fadeIn 0.2s ease-out;
+    padding: 1.5rem;
+    background-color: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(8px);
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-content {
     width: 100%;
-    max-width: 48rem; /* Keep the wider width for preview */
-    background-color: var(--bg-secondary);
+    max-width: 48rem;
+    background-color: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    max-height: 90vh; /* Ensure it doesn't exceed viewport */
+    box-shadow: var(--shadow-lg);
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleUp {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 .modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+    background-color: var(--primary);
+    color: white;
 }
 
 .modal-title {
     font-size: 1.25rem;
-    font-weight: 700;
+    font-weight: 800;
+    letter-spacing: -0.02em;
 }
 
 .modal-close {
-    color: var(--text-secondary);
-    transition: color 0.2s;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.4rem;
+    border-radius: 50%;
 }
 
 .modal-close:hover {
-    color: var(--text-primary);
+    color: white;
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .modal-body {
-    padding: 1.5rem;
-    max-height: 80vh;
+    padding: 2rem;
     overflow-y: auto;
+    background-color: var(--bg-secondary);
 }
