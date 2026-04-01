@@ -1,89 +1,70 @@
 import { useData } from '../context/DataContext'
 import { Trophy, Calendar, Shield, Users, ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import '../components/Pages.css'
 
 const Dashboard = () => {
     const { tournaments, games, teams, players } = useData()
 
     const stats = [
-        { label: 'Torneos', value: tournaments.length, icon: Trophy, color: 'var(--primary)', path: '/tournaments' },
-        { label: 'Partidos', value: games.length, icon: Calendar, color: 'var(--accent)', path: '/games' },
-        { label: 'Equipos', value: teams.length, icon: Shield, color: 'var(--clay)', path: '/teams' },
-        { label: 'Jugadores', value: players.length, icon: Users, color: '#6366f1', path: '/players' },
+        { label: 'Torneos',   value: tournaments.length, icon: Trophy,   color: 'var(--primary)', bg: 'rgba(26,54,93,0.1)',   path: '/tournaments' },
+        { label: 'Partidos',  value: games.length,       icon: Calendar, color: 'var(--accent)',  bg: 'rgba(39,98,33,0.1)',   path: '/games' },
+        { label: 'Equipos',   value: teams.length,       icon: Shield,   color: 'var(--clay)',   bg: 'rgba(184,50,50,0.1)',  path: '/teams' },
+        { label: 'Jugadores', value: players.length,     icon: Users,    color: '#7c3aed',       bg: 'rgba(124,58,237,0.1)', path: '/players' },
     ]
 
-    const recentGames = games.slice(-4).reverse()
-
+    const recentGames = games.slice(-5).reverse()
     const getTournamentName = (id) => tournaments.find(t => t.id == id)?.name || 'Desconocido'
     const getTeamName = (id) => teams.find(t => t.id == id)?.name || 'Desconocido'
 
     return (
         <div className="animate-fade-in">
-            <header style={{ marginBottom: '2.5rem' }}>
-                <h1 style={{ fontSize: '2.25rem', marginBottom: '0.5rem' }}>Panel de Control</h1>
-                <p style={{ color: 'var(--text-secondary)' }}>Bienvenido al sistema de gestión de la APS Liga</p>
-            </header>
+            <div className="page-header" style={{ marginBottom: '2rem' }}>
+                <div className="page-title-group">
+                    <h1>Panel de Control</h1>
+                    <p>Bienvenido al sistema de gestión de la APS Liga</p>
+                </div>
+            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-                {stats.map((stat, i) => (
-                    <Link key={stat.label} to={stat.path} className="card" style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '1.5rem',
-                        animationDelay: `${i * 100}ms`,
-                        textDecoration: 'none'
-                    }}>
-                        <div style={{ 
-                            width: '3.5rem', 
-                            height: '3.5rem', 
-                            borderRadius: 'var(--radius-sm)', 
-                            backgroundColor: `${stat.color}15`, 
-                            color: stat.color,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                        }}>
-                            <stat.icon size={28} />
+            <div className="stat-grid">
+                {stats.map((stat) => (
+                    <Link key={stat.label} to={stat.path} className="stat-card">
+                        <div className="stat-icon" style={{ backgroundColor: stat.bg, color: stat.color }}>
+                            <stat.icon size={26} />
                         </div>
                         <div>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</p>
-                            <p style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stat.value}</p>
+                            <p className="stat-label">{stat.label}</p>
+                            <p className="stat-value">{stat.value}</p>
                         </div>
                     </Link>
                 ))}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '2rem' }}>
+            <div className="dashboard-grid">
                 <section>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                        <h3 style={{ fontSize: '1.25rem' }}>Actividad Reciente</h3>
-                        <Link to="/games" style={{ color: 'var(--primary)', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <h3 style={{ fontSize: '1.1rem' }}>Actividad Reciente</h3>
+                        <Link to="/games" style={{ color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                             Ver todos <ArrowRight size={14} />
                         </Link>
                     </div>
                     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                         {recentGames.length === 0 ? (
-                            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay partidos registrados aún.</div>
+                            <div className="empty-state" style={{ border: 'none', padding: '3rem' }}>
+                                <div className="empty-state-icon"><Calendar size={22} /></div>
+                                <h3>Sin partidos registrados</h3>
+                                <p>Importá un Excel o agregá partidos manualmente.</p>
+                            </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                {recentGames.map((g, i) => (
-                                    <div key={g.id} style={{ 
-                                        padding: '1.25rem 1.5rem', 
-                                        borderBottom: i === recentGames.length - 1 ? 'none' : '1px solid var(--border-light)',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        transition: 'background-color 0.2s'
-                                    }} className="hover:bg-slate-50">
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', width: '60%' }}>
-                                            <div style={{ textAlign: 'right', flex: 1, fontWeight: 700 }}>{getTeamName(g.homeTeamId)}</div>
-                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>VS</div>
-                                            <div style={{ textAlign: 'left', flex: 1, fontWeight: 700 }}>{getTeamName(g.visitorTeamId)}</div>
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>{getTournamentName(g.tournamentId)}</p>
-                                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{g.date}</p>
+                            <div className="recent-games-list">
+                                {recentGames.map((g) => (
+                                    <div key={g.id} className="match-row">
+                                        <p className="match-team-home">{getTeamName(g.homeTeamId)}</p>
+                                        <div className="match-vs-badge">VS</div>
+                                        <p className="match-team-away">{getTeamName(g.visitorTeamId)}</p>
+                                        <div className="match-meta">
+                                            <p className="match-meta-tournament">{getTournamentName(g.tournamentId)}</p>
+                                            <p className="match-meta-date">{g.date}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -93,10 +74,11 @@ const Dashboard = () => {
                 </section>
 
                 <aside>
-                    <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem' }}>Accesos Rápidos</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <button className="btn btn-primary" style={{ width: '100%' }}>Generar Reporte</button>
-                        <button className="btn btn-outline" style={{ width: '100%' }}>Configuración</button>
+                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Accesos Rápidos</h3>
+                    <div className="quick-actions">
+                        <Link to="/games" className="btn btn-primary" style={{ width: '100%' }}>Ver Programación</Link>
+                        <Link to="/tournaments" className="btn btn-outline" style={{ width: '100%' }}>Gestionar Torneos</Link>
+                        <Link to="/teams" className="btn btn-outline" style={{ width: '100%' }}>Gestionar Equipos</Link>
                     </div>
                 </aside>
             </div>

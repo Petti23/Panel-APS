@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Plus, Edit2, Trash2, Calendar, Clock, MapPin, Upload } from 'lucide-react'
 import Modal from '../components/Modal'
+import UploadDrawer from '../components/UploadDrawer'
 import { useData } from '../context/DataContext'
 import { CATEGORIES } from '../constants/categories'
 import { normalizeText } from '../utils/schedule/normalizeText'
 import '../components/Table.css'
-import ExcelScheduleUploader from '../components/ExcelScheduleUploader'
+import '../components/Pages.css'
 
 const Games = () => {
     const { games, tournaments, teams, addGame, updateGame, deleteGame, importScheduleData } = useData()
@@ -111,85 +112,77 @@ const Games = () => {
 
     return (
         <div className="animate-fade-in">
-            <div style={{ marginBottom: '2.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h1 style={{ fontSize: '2.25rem' }}>Programación de Partidos</h1>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                        <button onClick={() => setIsExcelModalOpen(true)} className="btn btn-outline">
-                            <Upload size={18} />
-                            Subir Excel
-                        </button>
-                        <button onClick={() => handleOpenModal()} className="btn btn-primary">
-                            <Plus size={18} />
-                            Nuevo Partido
-                        </button>
-                    </div>
+            <div className="page-header">
+                <div className="page-title-group">
+                    <h1>Programación de Partidos</h1>
                 </div>
-
-                <div className="card" style={{ padding: '1.25rem', display: 'flex', gap: '1.5rem', alignItems: 'flex-end', border: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: '180px' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Categoría</label>
-                        <select value={filterCategory} onChange={(e) => {
-                            setFilterCategory(e.target.value);
-                            setFilterTournament(''); // Reset tournament filter as it might not be in the new category
-                        }}>
-                            <option value="">Todas las Categorías</option>
-                            {CATEGORIES.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div style={{ flex: 1, minWidth: '220px' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Torneo Específico</label>
-                        <select value={filterTournament} onChange={(e) => setFilterTournament(e.target.value)}>
-                            <option value="">Todos los torneos</option>
-                            {tournaments
-                                .filter(t => !filterCategory || normalizeText(t.category) === normalizeText(filterCategory))
-                                .map(t => (
-                                    <option key={t.id} value={t.id}>{t.name}</option>
-                                ))
-                            }
-                        </select>
-                    </div>
-                    <div style={{ width: '220px' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Fecha</label>
-                        <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
-                    </div>
-                    {(filterTournament || filterCategory || filterDate) && (
-                        <button className="btn btn-outline" style={{ padding: '0.6rem 1.25rem' }} onClick={() => { setFilterTournament(''); setFilterCategory(''); setFilterDate(''); }}>Limpiar</button>
-                    )}
+                <div className="page-actions">
+                    <button onClick={() => setIsExcelModalOpen(true)} className="btn btn-outline">
+                        <Upload size={17} />
+                        Subir Excel
+                    </button>
+                    <button onClick={() => handleOpenModal()} className="btn btn-primary">
+                        <Plus size={17} />
+                        Nuevo Partido
+                    </button>
                 </div>
             </div>
 
+            <div className="filter-bar">
+                <div className="filter-group">
+                    <label>Categoría</label>
+                    <select value={filterCategory} onChange={(e) => {
+                        setFilterCategory(e.target.value);
+                        setFilterTournament('');
+                    }}>
+                        <option value="">Todas las Categorías</option>
+                        {CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="filter-group wide">
+                    <label>Torneo</label>
+                    <select value={filterTournament} onChange={(e) => setFilterTournament(e.target.value)}>
+                        <option value="">Todos los torneos</option>
+                        {tournaments
+                            .filter(t => !filterCategory || normalizeText(t.category) === normalizeText(filterCategory))
+                            .map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                            ))
+                        }
+                    </select>
+                </div>
+
+                <div className="filter-group">
+                    <label>Fecha</label>
+                    <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+                </div>
+
+                {(filterTournament || filterCategory || filterDate) && (
+                    <button className="btn btn-outline btn-sm filter-clear-btn"
+                        onClick={() => { setFilterTournament(''); setFilterCategory(''); setFilterDate(''); }}>
+                        Limpiar filtros
+                    </button>
+                )}
+            </div>
+
             {sortedTournamentIds.length === 0 ? (
-                <div className="card" style={{ textAlign: 'center', padding: '5rem 2rem', borderStyle: 'dashed', borderWidth: '2px' }}>
-                    <div style={{ backgroundColor: 'var(--bg-primary)', width: '4rem', height: '4rem', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
-                        <Calendar size={24} style={{ color: 'var(--text-muted)' }} />
-                    </div>
-                    <h3 style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>No hay partidos agendados</h3>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Prueba cambiando los filtros o sube un archivo Excel.</p>
+                <div className="empty-state">
+                    <div className="empty-state-icon"><Calendar size={22} /></div>
+                    <h3>No hay partidos agendados</h3>
+                    <p>Probá cambiando los filtros o subí un archivo Excel.</p>
                 </div>
             ) : (
                 sortedTournamentIds.map(tId => (
-                    <div key={tId} style={{ marginBottom: '3.5rem' }}>
-                        <div style={{ 
-                            padding: '1rem 0', 
-                            borderBottom: '2px solid var(--primary)',
-                            marginBottom: '1.5rem',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'baseline'
-                        }}>
+                    <div key={tId} style={{ marginBottom: '3rem' }}>
+                        <div className="section-divider">
                             <div>
-                                <h3 style={{ margin: 0, fontSize: '1.5rem' }}>{getTournamentName(tId)}</h3>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginTop: '0.2rem' }}>
-                                    {getTournamentCategory(tId)}
-                                </div>
+                                <h3>{getTournamentName(tId)}</h3>
+                                <div className="section-divider-category">{getTournamentCategory(tId)}</div>
                             </div>
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                {groupedGames[tId].length} Partidos
-                            </span>
+                            <span className="section-divider-count">{groupedGames[tId].length} Partidos</span>
                         </div>
 
                         <div className="table-container">
@@ -197,7 +190,7 @@ const Games = () => {
                                 <thead>
                                     <tr>
                                         <th style={{ width: '45%' }}>Enfrentamiento</th>
-                                        <th style={{ width: '25%' }}>Sede / Cancha</th>
+                                        <th className="col-field" style={{ width: '25%' }}>Sede / Cancha</th>
                                         <th style={{ width: '18%' }}>Horario</th>
                                         <th style={{ width: '12%', textAlign: 'right' }}>Acciones</th>
                                     </tr>
@@ -206,9 +199,9 @@ const Games = () => {
                                     {groupedGames[tId].map((g) => (
                                         <tr key={g.id}>
                                             <td style={{ paddingLeft: '1.5rem' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                                                    <div style={{ flex: 1, textAlign: 'right', fontWeight: 800, fontSize: '1.1rem' }}>{getTeamName(g.homeTeamId)}</div>
-                                                    <div style={{ 
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                    <div className="game-matchup-home" style={{ flex: 1, textAlign: 'right', fontWeight: 800, fontSize: '1rem' }}>{getTeamName(g.homeTeamId)}</div>
+                                                    <div className="game-vs-badge" style={{ 
                                                         width: '32px', 
                                                         height: '32px', 
                                                         display: 'flex', 
@@ -219,12 +212,13 @@ const Games = () => {
                                                         border: '1px solid var(--border)',
                                                         fontSize: '0.7rem',
                                                         fontWeight: 900,
-                                                        color: 'var(--text-muted)'
+                                                        color: 'var(--text-muted)',
+                                                        flexShrink: 0
                                                     }}>VS</div>
-                                                    <div style={{ flex: 1, textAlign: 'left', fontWeight: 800, fontSize: '1.1rem' }}>{getTeamName(g.visitorTeamId)}</div>
+                                                    <div className="game-matchup-away" style={{ flex: 1, textAlign: 'left', fontWeight: 800, fontSize: '1rem' }}>{getTeamName(g.visitorTeamId)}</div>
                                                 </div>
                                             </td>
-                                            <td>
+                                            <td className="col-field">
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 500 }}>
                                                     <MapPin size={16} style={{ color: 'var(--accent)' }} />
                                                     {g.field}
@@ -232,12 +226,12 @@ const Games = () => {
                                             </td>
                                             <td>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: 'var(--primary)' }}>
-                                                        <Calendar size={14} />
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: 'var(--primary)', whiteSpace: 'nowrap' }}>
+                                                        <Calendar size={13} />
                                                         {new Date(g.date + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
                                                     </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                                        <Clock size={14} />
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                        <Clock size={13} />
                                                         {g.time} HS
                                                     </div>
                                                 </div>
@@ -266,16 +260,16 @@ const Games = () => {
                 onClose={handleCloseModal}
                 title={currentGame ? 'Editar Partido' : 'Nuevo Partido'}
             >
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, fontSize: '0.875rem' }}>Torneo</label>
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label>Torneo</label>
                         <select
                             value={formData.tournamentId}
                             onChange={(e) => {
                                 setFormData({
                                     ...formData,
                                     tournamentId: e.target.value,
-                                    homeTeamId: '', // Reset teams when tournament/category changes
+                                    homeTeamId: '',
                                     visitorTeamId: ''
                                 })
                             }}
@@ -292,9 +286,9 @@ const Games = () => {
                         </select>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, fontSize: '0.875rem' }}>Equipo Local</label>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>Equipo Local</label>
                             <select
                                 value={formData.homeTeamId}
                                 onChange={(e) => setFormData({ ...formData, homeTeamId: e.target.value })}
@@ -307,8 +301,8 @@ const Games = () => {
                                 ))}
                             </select>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, fontSize: '0.875rem' }}>Equipo Visitante</label>
+                        <div className="form-group">
+                            <label>Equipo Visitante</label>
                             <select
                                 value={formData.visitorTeamId}
                                 onChange={(e) => setFormData({ ...formData, visitorTeamId: e.target.value })}
@@ -323,8 +317,8 @@ const Games = () => {
                         </div>
                     </div>
 
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, fontSize: '0.875rem' }}>Cancha</label>
+                    <div className="form-group">
+                        <label>Cancha</label>
                         <input
                             type="text"
                             placeholder="Ej. Estadio Principal"
@@ -334,9 +328,9 @@ const Games = () => {
                         />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, fontSize: '0.875rem' }}>Fecha</label>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>Fecha</label>
                             <input
                                 type="date"
                                 value={formData.date}
@@ -344,8 +338,8 @@ const Games = () => {
                                 required
                             />
                         </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, fontSize: '0.875rem' }}>Hora</label>
+                        <div className="form-group">
+                            <label>Hora</label>
                             <input
                                 type="time"
                                 value={formData.time}
@@ -355,20 +349,26 @@ const Games = () => {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+                    <div className="form-actions">
                         <button type="button" onClick={handleCloseModal} className="btn btn-outline">Cancelar</button>
                         <button type="submit" className="btn btn-primary">{currentGame ? 'Guardar Cambios' : 'Agendar Partido'}</button>
                     </div>
                 </form>
             </Modal>
 
-            <Modal isOpen={isExcelModalOpen} onClose={() => setIsExcelModalOpen(false)} title="Importar Programación">
-                <ExcelScheduleUploader onUpload={(data) => {
-                    const stats = importScheduleData(data);
-                    alert(`Importación finalizada:\n- ${stats.addedGames} partidos nuevos\n- ${stats.addedTeams} equipos nuevos\n- ${stats.addedTournaments} torneos nuevos`);
-                    setIsExcelModalOpen(false);
-                }} />
-            </Modal>
+            <UploadDrawer
+                isOpen={isExcelModalOpen}
+                onClose={() => setIsExcelModalOpen(false)}
+                onUpload={async (data) => {
+                    try {
+                        const stats = await importScheduleData(data)
+                        alert(`Importación finalizada:\n- ${stats.addedTournaments} torneos nuevos\n- ${stats.addedTeams} equipos nuevos\n- ${stats.addedGames} partidos nuevos`)
+                    } catch (err) {
+                        console.error('Error importando datos:', err)
+                        alert(`Error al importar: ${err.message}`)
+                    }
+                }}
+            />
         </div>
     )
 }

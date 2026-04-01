@@ -1,212 +1,260 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import { normalizeText } from '../utils/schedule/normalizeText'
-import { parseDateToISO } from '../utils/schedule/parseDate'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import {
+    fetchTournaments, insertTournament, updateTournament as dbUpdateTournament,
+    deleteTournament as dbDeleteTournament,
+} from '../services/db/tournaments'
+import {
+    fetchTeams, insertTeam, updateTeam as dbUpdateTeam,
+    deleteTeam as dbDeleteTeam,
+} from '../services/db/teams'
+import {
+    fetchPlayers, insertPlayer, updatePlayer as dbUpdatePlayer,
+    deletePlayer as dbDeletePlayer,
+} from '../services/db/players'
+import {
+    fetchGames, insertGame, updateGame as dbUpdateGame,
+    deleteGame as dbDeleteGame,
+} from '../services/db/games'
+import { importScheduleToDb } from '../services/db/scheduleImport'
+import { fetchCategories } from '../services/db/categories'
 
 const DataContext = createContext()
 
-export const useData = () => {
-    return useContext(DataContext)
-}
+export const useData = () => useContext(DataContext)
 
 export const DataProvider = ({ children }) => {
-    // Initialize from localStorage or empty arrays
-    const [tournaments, setTournaments] = useState(() => {
-        const saved = localStorage.getItem('tournaments')
-        return saved ? JSON.parse(saved) : []
-    })
+    const [categories, setCategories] = useState([])
+    const [tournaments, setTournaments] = useState([])
+    const [teams, setTeams] = useState([])
+    const [players, setPlayers] = useState([])
+    const [games, setGames] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [dbError, setDbError] = useState(null)
 
-    const [teams, setTeams] = useState(() => {
-        const saved = localStorage.getItem('teams')
-        return saved ? JSON.parse(saved) : []
-    })
+    // ── Carga inicial desde Supabase ──────────────────────────────
+    const loadAll = useCallback(async () => {
+        setLoading(true)
+        try {
+            const [cats, t, tm, p, g] = await Promise.all([
+                fetchCategories(),
+                fetchTournaments(),
+                fetchTeams(),
+                fetchPlayers(),
+                fetchGames(),
+            ])
+            setCategories(cats)
+            setTournaments(t)
+            setTeams(tm)
+            setPlayers(p)
+            setGames(g)
+            setDbError(null)
+        } catch (err) {
+            console.error('Error cargando datos desde Supabase:', err)
+            setDbError(err.message)
+        } finally {
+            setLoading(false)
+        }
+    }, [])
 
-    const [players, setPlayers] = useState(() => {
-        const saved = localStorage.getItem('players')
-        return saved ? JSON.parse(saved) : []
-    })
+    useEffect(() => { loadAll() }, [loadAll])
 
-    const [games, setGames] = useState(() => {
-        const saved = localStorage.getItem('games')
-        return saved ? JSON.parse(saved) : []
-    })
-
-    // Persist to localStorage whenever data changes
-    useEffect(() => { localStorage.setItem('tournaments', JSON.stringify(tournaments)) }, [tournaments])
-    useEffect(() => { localStorage.setItem('teams', JSON.stringify(teams)) }, [teams])
-    useEffect(() => { localStorage.setItem('players', JSON.stringify(players)) }, [players])
-    useEffect(() => { localStorage.setItem('games', JSON.stringify(games)) }, [games])
-
-    // Migration Effect: Normalize existing data labels to official categories
-    useEffect(() => {
-        // Use dynamic import for the utility to avoid circular dependencies if any
-        import('../utils/schedule/categoryMapper.js').then(({ mapCategoryAndTournament }) => {
-            const migrate = (setter) => {
-                setter(prevItems => {
-                    let changed = false;
-                    const newItems = prevItems.map(item => {
-                        if (!item.category) return item;
-                        const { category } = mapCategoryAndTournament(item.category);
-                        if (category !== item.category && category !== 'Desconocido') {
-                            changed = true;
-                            return { ...item, category };
-                        }
-                        return item;
-                    });
-                    return changed ? newItems : prevItems;
-                });
-            };
-
-            migrate(setTournaments);
-            migrate(setTeams);
-            migrate(setPlayers);
-        }).catch(err => console.error("Migration failed:", err));
-    }, []);
-
-    // Actions
-    // Use functional updates to avoid closure staleness issues (e.g. inside loops)
-
-    const addTournament = (data) => setTournaments(prev => [...prev, { id: Date.now(), ...data }])
-    const addTournaments = (tournamentsData) => {
-        const baseId = Date.now();
-        setTournaments(prev => [
-            ...prev,
-            ...tournamentsData.map((t, i) => ({ id: baseId + i, ...t }))
-        ]);
-    };
-    const updateTournament = (id, data) => setTournaments(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    const deleteTournament = (id) => setTournaments(prev => prev.filter(t => t.id !== id))
-
-    const addTeam = (data) => setTeams(prev => [...prev, { id: Date.now(), ...data }])
-    const addTeams = (teamsData) => {
-        const baseId = Date.now();
-        setTeams(prev => [
-            ...prev,
-            ...teamsData.map((t, i) => ({ id: baseId + i, ...t }))
-        ]);
-    };
-    const updateTeam = (id, data) => setTeams(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    const deleteTeam = (id) => setTeams(prev => prev.filter(t => t.id !== id))
-
-    const addPlayer = (data) => setPlayers(prev => [...prev, { id: Date.now(), ...data }])
-
-    // Bulk add to ensure atomic update and unique IDs in loop
-    const addPlayers = (playersData) => {
-        const baseId = Date.now()
-        const newPlayers = playersData.map((p, index) => ({
-            id: baseId + index,
-            ...p
-        }))
-        setPlayers(prev => [...prev, ...newPlayers])
+    // ── Torneos ───────────────────────────────────────────────────
+    const addTournament = (data) => {
+        const tempId = `tmp_${Date.now()}`
+        setTournaments((prev) => [...prev, { id: tempId, ...data }])
+        insertTournament(data)
+            .then((created) => setTournaments((prev) => prev.map((t) => t.id === tempId ? created : t)))
+            .catch((err) => {
+                console.error('Error creando torneo:', err)
+                setTournaments((prev) => prev.filter((t) => t.id !== tempId))
+            })
     }
 
-    const updatePlayer = (id, data) => setPlayers(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    const deletePlayer = (id) => setPlayers(prev => prev.filter(t => t.id !== id))
+    const addTournaments = (items) => {
+        const base = Date.now()
+        const tmpItems = items.map((t, i) => ({ id: `tmp_${base + i}`, ...t }))
+        setTournaments((prev) => [...prev, ...tmpItems])
+        Promise.all(items.map(insertTournament))
+            .then((created) => setTournaments((prev) => {
+                const without = prev.filter((t) => !tmpItems.some((o) => o.id === t.id))
+                return [...without, ...created]
+            }))
+            .catch((err) => {
+                console.error('Error creando torneos:', err)
+                setTournaments((prev) => prev.filter((t) => !tmpItems.some((o) => o.id === t.id)))
+            })
+    }
 
-    const addGame = (data) => setGames(prev => [...prev, { id: Date.now(), ...data }])
-    const addGames = (gamesData) => {
-        const baseId = Date.now();
-        setGames(prev => [
-            ...prev,
-            ...gamesData.map((g, i) => ({ id: baseId + i, ...g }))
-        ]);
-    };
-    const updateGame = (id, data) => setGames(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    const deleteGame = (id) => setGames(prev => prev.filter(t => t.id !== id))
+    const updateTournament = (id, data) => {
+        const snapshot = tournaments
+        setTournaments((list) => list.map((t) => t.id === id ? { ...t, ...data } : t))
+        dbUpdateTournament(id, data).catch((err) => {
+            console.error('Error actualizando torneo:', err)
+            setTournaments(snapshot)
+        })
+    }
 
-    const importScheduleData = (data) => {
-        let currentTournaments = [...tournaments];
-        let currentTeams = [...teams];
-        let currentGames = [...games];
-        const baseId = Date.now();
-        let counter = 0;
+    const deleteTournament = (id) => {
+        const snapshot = tournaments
+        setTournaments((list) => list.filter((t) => t.id !== id))
+        dbDeleteTournament(id).catch((err) => {
+            console.error('Error eliminando torneo:', err)
+            setTournaments(snapshot)
+        })
+    }
 
-        data.categorias.forEach(cat => {
-            if (cat.estado !== 'con_partidos' || cat.partidos.length === 0) return;
+    // ── Equipos ───────────────────────────────────────────────────
+    const addTeam = (data) => {
+        const tempId = `tmp_${Date.now()}`
+        setTeams((prev) => [...prev, { id: tempId, ...data }])
+        insertTeam(data)
+            .then((created) => setTeams((prev) => prev.map((t) => t.id === tempId ? created : t)))
+            .catch((err) => {
+                console.error('Error creando equipo:', err)
+                setTeams((prev) => prev.filter((t) => t.id !== tempId))
+            })
+    }
 
-            // Use the mapped category if available (from our new categoryMapper)
-            const officialCategory = cat.category || cat.categoria;
-            const officialTournamentName = cat.tournamentName || `${cat.categoria} ${cat.torneo || ''} ${cat.anio || ''}`.trim();
-            
-            const normCat = normalizeText(officialCategory);
-            // Search for existing tournament using the official category and name
-            let tournament = currentTournaments.find(t => 
-                normalizeText(t.category) === normCat && 
-                normalizeText(t.name) === normalizeText(officialTournamentName)
-            );
+    const addTeams = (items) => {
+        const base = Date.now()
+        const tmpItems = items.map((t, i) => ({ id: `tmp_${base + i}`, ...t }))
+        setTeams((prev) => [...prev, ...tmpItems])
+        Promise.all(items.map(insertTeam))
+            .then((created) => setTeams((prev) => {
+                const without = prev.filter((t) => !tmpItems.some((o) => o.id === t.id))
+                return [...without, ...created]
+            }))
+            .catch((err) => {
+                console.error('Error creando equipos:', err)
+                setTeams((prev) => prev.filter((t) => !tmpItems.some((o) => o.id === t.id)))
+            })
+    }
 
-            if (!tournament) {
-                tournament = { 
-                    id: baseId + (counter++), 
-                    name: officialTournamentName, 
-                    category: officialCategory 
-                };
-                currentTournaments.push(tournament);
-            }
+    const updateTeam = (id, data) => {
+        const snapshot = teams
+        setTeams((list) => list.map((t) => t.id === id ? { ...t, ...data } : t))
+        dbUpdateTeam(id, data).catch((err) => {
+            console.error('Error actualizando equipo:', err)
+            setTeams(snapshot)
+        })
+    }
 
-            cat.partidos.forEach(p => {
-                const normNameL = normalizeText(p.local);
-                let homeTeam = currentTeams.find(t => normalizeText(t.name) === normNameL && normalizeText(t.category) === normCat);
-                if (!homeTeam) {
-                    homeTeam = { 
-                        id: baseId + (counter++), 
-                        name: p.local, 
-                        category: officialCategory 
-                    };
-                    currentTeams.push(homeTeam);
-                }
+    const deleteTeam = (id) => {
+        const snapshot = teams
+        setTeams((list) => list.filter((t) => t.id !== id))
+        dbDeleteTeam(id).catch((err) => {
+            console.error('Error eliminando equipo:', err)
+            setTeams(snapshot)
+        })
+    }
 
-                const normNameV = normalizeText(p.visitante);
-                let visitorTeam = currentTeams.find(t => normalizeText(t.name) === normNameV && normalizeText(t.category) === normCat);
-                if (!visitorTeam) {
-                    visitorTeam = { 
-                        id: baseId + (counter++), 
-                        name: p.visitante, 
-                        category: officialCategory 
-                    };
-                    currentTeams.push(visitorTeam);
-                }
+    // ── Jugadores ─────────────────────────────────────────────────
+    const addPlayer = (data) => {
+        const tempId = `tmp_${Date.now()}`
+        setPlayers((prev) => [...prev, { id: tempId, ...data }])
+        insertPlayer(data)
+            .then((created) => setPlayers((prev) => prev.map((p) => p.id === tempId ? created : p)))
+            .catch((err) => {
+                console.error('Error creando jugador:', err)
+                setPlayers((prev) => prev.filter((p) => p.id !== tempId))
+            })
+    }
 
-                const gameDate = parseDateToISO(p.fechaTexto);
-                
-                const isDuplicate = currentGames.some(g => 
-                    g.tournamentId == tournament.id && 
-                    g.homeTeamId == homeTeam.id && 
-                    g.visitorTeamId == visitorTeam.id && 
-                    g.date === gameDate && 
-                    g.time === p.hora
-                );
+    const addPlayers = (items) => {
+        const base = Date.now()
+        const tmpItems = items.map((p, i) => ({ id: `tmp_${base + i}`, ...p }))
+        setPlayers((prev) => [...prev, ...tmpItems])
+        Promise.all(items.map(insertPlayer))
+            .then((created) => setPlayers((prev) => {
+                const without = prev.filter((p) => !tmpItems.some((o) => o.id === p.id))
+                return [...without, ...created]
+            }))
+            .catch((err) => {
+                console.error('Error creando jugadores:', err)
+                setPlayers((prev) => prev.filter((p) => !tmpItems.some((o) => o.id === p.id)))
+            })
+    }
 
-                if (!isDuplicate) {
-                    currentGames.push({
-                        id: baseId + (counter++),
-                        tournamentId: tournament.id,
-                        homeTeamId: homeTeam.id,
-                        visitorTeamId: visitorTeam.id,
-                        field: p.diamante || 'A confirmar',
-                        date: gameDate,
-                        time: p.hora
-                    });
-                }
-            });
-        });
+    const updatePlayer = (id, data) => {
+        const snapshot = players
+        setPlayers((list) => list.map((p) => p.id === id ? { ...p, ...data } : p))
+        dbUpdatePlayer(id, data).catch((err) => {
+            console.error('Error actualizando jugador:', err)
+            setPlayers(snapshot)
+        })
+    }
 
-        setTournaments(currentTournaments);
-        setTeams(currentTeams);
-        setGames(currentGames);
-        
-        return {
-            addedTournaments: currentTournaments.length - tournaments.length,
-            addedTeams: currentTeams.length - teams.length,
-            addedGames: currentGames.length - games.length
-        };
-    };
+    const deletePlayer = (id) => {
+        const snapshot = players
+        setPlayers((list) => list.filter((p) => p.id !== id))
+        dbDeletePlayer(id).catch((err) => {
+            console.error('Error eliminando jugador:', err)
+            setPlayers(snapshot)
+        })
+    }
+
+    // ── Partidos ──────────────────────────────────────────────────
+    const addGame = (data) => {
+        const tempId = `tmp_${Date.now()}`
+        setGames((prev) => [...prev, { id: tempId, ...data }])
+        insertGame(data)
+            .then((created) => setGames((prev) => prev.map((g) => g.id === tempId ? created : g)))
+            .catch((err) => {
+                console.error('Error creando partido:', err)
+                setGames((prev) => prev.filter((g) => g.id !== tempId))
+            })
+    }
+
+    const addGames = (items) => {
+        const base = Date.now()
+        const tmpItems = items.map((g, i) => ({ id: `tmp_${base + i}`, ...g }))
+        setGames((prev) => [...prev, ...tmpItems])
+        Promise.all(items.map(insertGame))
+            .then((created) => setGames((prev) => {
+                const without = prev.filter((g) => !tmpItems.some((o) => o.id === g.id))
+                return [...without, ...created]
+            }))
+            .catch((err) => {
+                console.error('Error creando partidos:', err)
+                setGames((prev) => prev.filter((g) => !tmpItems.some((o) => o.id === g.id)))
+            })
+    }
+
+    const updateGame = (id, data) => {
+        const snapshot = games
+        setGames((list) => list.map((g) => g.id === id ? { ...g, ...data } : g))
+        dbUpdateGame(id, data).catch((err) => {
+            console.error('Error actualizando partido:', err)
+            setGames(snapshot)
+        })
+    }
+
+    const deleteGame = (id) => {
+        const snapshot = games
+        setGames((list) => list.filter((g) => g.id !== id))
+        dbDeleteGame(id).catch((err) => {
+            console.error('Error eliminando partido:', err)
+            setGames(snapshot)
+        })
+    }
+
+    // ── Importación masiva desde Excel ────────────────────────────
+    const importScheduleData = async (data) => {
+        const result = await importScheduleToDb(data)
+        // Refrescar todo desde DB para tener UUIDs reales y datos limpios
+        await loadAll()
+        return result
+    }
 
     const value = {
+        loading,
+        dbError,
+        categories,
         tournaments, addTournament, addTournaments, updateTournament, deleteTournament,
         teams, addTeam, addTeams, updateTeam, deleteTeam,
         players, addPlayer, addPlayers, updatePlayer, deletePlayer,
         games, addGame, addGames, updateGame, deleteGame,
-        importScheduleData
+        importScheduleData,
     }
 
     return (

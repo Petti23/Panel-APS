@@ -1,0 +1,156 @@
+/* ════════════════════════════════════
+   UPLOAD DRAWER
+   — slides down from the top of the
+     main content area (right of sidebar)
+════════════════════════════════════ */
+
+/* Thin translucent backdrop */
+.upload-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: transparent;
+    pointer-events: none;
+    transition: background 0.25s ease;
+}
+.upload-drawer-backdrop.open {
+    background: rgba(10, 18, 38, 0.5);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: all;
+}
+
+/* The drawer panel itself */
+.upload-drawer {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(calc(-100% - 12px));
+    width: calc(100% - 320px);
+    max-width: 780px;
+    min-width: 400px;
+    z-index: 201;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-light);
+    box-shadow: 0 8px 32px rgba(10, 18, 38, 0.22);
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    overflow: hidden;
+    visibility: hidden;
+}
+.upload-drawer.open {
+    transform: translateX(-50%) translateY(0);
+    visibility: visible;
+}
+
+/* Header */
+.upload-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.75rem;
+    background: var(--primary);
+}
+
+.upload-drawer-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.01em;
+}
+
+.upload-drawer-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    color: rgba(255,255,255,0.75);
+    background: rgba(255,255,255,0.1);
+    transition: var(--transition);
+}
+.upload-drawer-close:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.2);
+}
+
+/* Body */
+.upload-drawer-body {
+    padding: 1.5rem 1.75rem;
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+/* Drop zone */
+.upload-dz {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-lg);
+    padding: 2.25rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.875rem;
+    background: var(--bg-secondary);
+    transition: var(--transition);
+    user-select: none;
+}
+.upload-dz:hover {
+    border-color: var(--accent);
+    background: rgba(134, 239, 172, 0.06);
+}
+.upload-dz.dragging {
+    border-color: var(--accent);
+    background: rgba(134, 239, 172, 0.12);
+    transform: scale(1.01);
+}
+.upload-dz.processing {
+    cursor: default;
+    pointer-events: none;
+    border-color: var(--primary);
+    opacity: 0.85;
+}
+.upload-dz:hover .upload-dz-icon,
+.upload-dz.dragging .upload-dz-icon {
+    background: rgba(134, 239, 172, 0.18);
+    color: var(--accent);
+}
+
+.upload-dz-icon {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    background: rgba(26, 54, 93, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+    transition: var(--transition);
+}
+
+.upload-dz-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.upload-dz-text strong {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.upload-dz-text span {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+/* Responsive — no changes needed, already full-width */
+@media (max-width: 1024px) {
+    .upload-drawer-body {
+        padding: 1.25rem 1rem;
+    }
+}

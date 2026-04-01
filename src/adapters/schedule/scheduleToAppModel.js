@@ -3,6 +3,8 @@ export const scheduleToAppModel = (parsedData) => {
         titulo: parsedData.tituloGeneral,
         categorias: parsedData.categorias.map(c => ({
             categoria: c.categoria,
+            category: c.category,           // nombre oficial mapeado (ej. "Cadete")
+            tournamentName: c.tournamentName, // torneo sin año ni categoría
             torneo: c.torneo,
             anio: c.anio,
             estado: c.estado,

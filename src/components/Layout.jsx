@@ -1,11 +1,13 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Trophy, Calendar, Users, Shield, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Trophy, Calendar, Users, Shield, Menu, X, LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 import './Layout.css'
 
 const Layout = () => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
     const location = useLocation()
+    const { session, signOut } = useAuth()
 
     const navItems = [
         { path: '/', label: 'Inicio', icon: LayoutDashboard },
@@ -44,10 +46,13 @@ const Layout = () => {
                     <div className="user-profile">
                         <div className="avatar">A</div>
                         <div className="user-info">
-                            <p>Admin User</p>
-                            <p>admin@apsliga.com</p>
+                            <p>Admin</p>
+                            <p>{session?.user?.email}</p>
                         </div>
                     </div>
+                    <button className="logout-btn" onClick={signOut} title="Cerrar sesión">
+                        <LogOut size={16} />
+                    </button>
                 </div>
             </aside>
 

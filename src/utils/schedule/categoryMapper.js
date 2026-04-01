@@ -1,5 +1,19 @@
 import { normalizeText } from './normalizeText.js';
 
+/**
+ * Pre-procesa el texto crudo antes de buscar la categoría:
+ *  - Convierte comillas tipográficas (curvas del Excel) a comillas rectas
+ *  - Elimina el año (ej. "2026") para que no interfiera con el mapeo
+ */
+const preprocess = (text) => {
+    return String(text)
+        .replace(/[\u201c\u201d\u00ab\u00bb]/g, '"') // " " « » → "
+        .replace(/[\u2018\u2019]/g, "'")              // ' ' → '
+        .replace(/\b20\d{2}\b/g, '')                 // strip año (2020-2099)
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
 const CATEGORY_MAPPINGS = [
     { keywords: ['escuelita'], official: 'Escuelita' },
     { keywords: ['preinfantil'], official: 'Preinfantil' },
@@ -23,7 +37,8 @@ const CATEGORY_MAPPINGS = [
 export const mapCategoryAndTournament = (rawText) => {
     if (!rawText) return { category: 'Desconocido', tournamentName: '' };
 
-    const normalized = normalizeText(rawText);
+    const cleaned = preprocess(rawText);       // sin año, sin comillas curvas
+    const normalized = normalizeText(cleaned); // sin tildes, minúsculas
     
     // Sort mappings by keyword length descending to match more specific phrases first
     // (e.g., "lanzamiento lento +35 femenino" before "lanzamiento lento +35")
@@ -52,7 +67,7 @@ export const mapCategoryAndTournament = (rawText) => {
                     if (aQuotesIdx !== -1) sliceIdx = aQuotesIdx + 4;
                 }
 
-                let remainingText = rawText.substring(sliceIdx).trim();
+                let remainingText = cleaned.substring(sliceIdx).trim();
                 
                 // Remove leading quotes or dashes that might remain
                 remainingText = remainingText.replace(/^["'\-\s]+/, '').trim();

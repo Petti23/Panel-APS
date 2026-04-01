@@ -27,10 +27,10 @@ const SchedulePreviewModal = ({ isOpen, onClose, fileName, previewData, onConfir
                 <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                     {categorias.map((cat, idx) => (
                         <div key={idx} style={{ marginBottom: '1.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1rem' }}>
-                            <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>{cat.categoriaRaw}</span>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 'normal', backgroundColor: 'var(--bg-secondary)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                                    {cat.estado}
+                            <h4 style={{ margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span className="category-badge" style={{ fontSize: '0.85rem' }}>{cat.categoriaRaw}</span>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                    {cat.estado === 'con_partidos' ? `${cat.partidos.length} partidos` : cat.estado}
                                 </span>
                             </h4>
                             
@@ -76,10 +76,10 @@ const SchedulePreviewModal = ({ isOpen, onClose, fileName, previewData, onConfir
                     ))}
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+                <div className="form-actions">
                     <button onClick={onClose} className="btn btn-outline">Cancelar</button>
-                    <button onClick={onConfirm} className="btn btn-primary" disabled={estadisticas.partidosValidos === 0 && categorias.length === 0}>
-                        Confirmar Importación
+                    <button onClick={onConfirm} className="btn btn-primary" disabled={estadisticas.partidosValidos === 0}>
+                        Confirmar Importación ({estadisticas.partidosValidos} partidos)
                     </button>
                 </div>
             </div>
