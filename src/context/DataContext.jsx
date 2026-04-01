@@ -20,6 +20,7 @@ import { fetchCategories } from '../services/db/categories'
 
 const DataContext = createContext()
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useData = () => useContext(DataContext)
 
 export const DataProvider = ({ children }) => {

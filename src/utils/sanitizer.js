@@ -75,12 +75,12 @@ export const validatePlayerRow = (row) => {
 
     // Basic format validation
     // Allow spaces, dots in names
-    const nameRegex = /^[a-zA-Z\u00C0-\u00FF\s\-\.]+$/;
+    const nameRegex = /^[a-zA-Z\u00C0-\u00FF\s.-]+$/;
     if (nombre && !nameRegex.test(nombre)) errors.push('Nombre contiene caracteres inválidos');
     if (apellido && !nameRegex.test(apellido)) errors.push('Apellido contiene caracteres inválidos');
 
     // DNI validation (numbers, dots, dashes allowed)
-    const dniRegex = /^[0-9\.\-]+$/;
+    const dniRegex = /^[0-9.-]+$/;
     if (dni && !dniRegex.test(dni)) errors.push('DNI inválido (solo números, puntos o guiones)');
 
     return {

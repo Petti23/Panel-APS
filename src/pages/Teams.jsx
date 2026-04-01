@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Shield, Upload } from 'lucide-react'
+import { Plus, SquarePen, Trash2, Shield, Upload } from 'lucide-react'
 import Modal from '../components/Modal'
 import ExcelUploader from '../components/ExcelUploader'
 import { useData } from '../context/DataContext'
@@ -8,7 +8,7 @@ import '../components/Table.css'
 import '../components/Pages.css'
 
 const Teams = () => {
-    const { teams, addTeam, updateTeam, deleteTeam, addPlayer, addPlayers } = useData()
+    const { teams, addTeam, updateTeam, deleteTeam, addPlayers } = useData()
 
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [currentTeam, setCurrentTeam] = useState(null)
@@ -129,7 +129,7 @@ const Teams = () => {
                                                 <Upload size={16} />
                                             </button>
                                             <button onClick={() => handleOpenModal(t)} className="btn-icon" title="Editar">
-                                                <Edit2 size={16} />
+                                                <SquarePen size={16} />
                                             </button>
                                             <button onClick={() => handleDelete(t.id)} className="btn-icon delete" title="Eliminar">
                                                 <Trash2 size={16} />

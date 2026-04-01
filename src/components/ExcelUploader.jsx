@@ -1,11 +1,11 @@
 import { useState, useRef } from 'react'
-import * as XLSX from 'xlsx'
-import { Upload, AlertTriangle, CheckCircle, XCircle, FileSpreadsheet } from 'lucide-react'
+import ExcelJS from 'exceljs'
+import { Upload, TriangleAlert, CircleCheck, CircleX, FileSpreadsheet } from 'lucide-react'
 import Modal from './Modal'
 import { validatePlayerRow } from '../utils/sanitizer'
 import './Table.css'
 
-const ExcelUploader = ({ isOpen, onClose, team, category, onUpload }) => {
+const ExcelUploader = ({ isOpen, onClose, team, onUpload }) => {
     const [file, setFile] = useState(null)
     const [previewData, setPreviewData] = useState([])
     const [errors, setErrors] = useState([])
@@ -20,43 +20,51 @@ const ExcelUploader = ({ isOpen, onClose, team, category, onUpload }) => {
         }
     }
 
-    const processFile = (file) => {
+    const processFile = async (file) => {
         setIsProcessing(true)
-        const reader = new FileReader()
-        reader.onload = (e) => {
-            try {
-                const data = new Uint8Array(e.target.result)
-                const workbook = XLSX.read(data, { type: 'array' })
-                const sheetName = workbook.SheetNames[0]
-                const worksheet = workbook.Sheets[sheetName]
-                // Use header: 1 to get an array of arrays, avoiding issues with missing headers
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+        try {
+            const buffer = await file.arrayBuffer()
+            const workbook = new ExcelJS.Workbook()
+            await workbook.xlsx.load(buffer)
+            const worksheet = workbook.worksheets[0]
 
-                const processed = []
-                const validationErrors = []
-
-                jsonData.forEach((row, index) => {
-                    const result = validatePlayerRow(row)
-                    // Skip completely empty rows seamlessly
-                    if (result.isEmpty) return;
-
-                    if (result.isValid) {
-                        processed.push({ ...result.data, originalIndex: index })
-                    } else {
-                        validationErrors.push({ row: index + 2, errors: result.errors, data: row })
-                    }
+            const jsonData = []
+            worksheet.eachRow({ includeEmpty: false }, (row) => {
+                const rowData = []
+                row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    while (rowData.length < colNumber - 1) rowData.push('')
+                    const v = cell.value
+                    if (v === null || v === undefined) { rowData.push(''); return }
+                    if (typeof v === 'object' && 'result' in v) { rowData.push(String(v.result ?? '')); return }
+                    if (typeof v === 'object' && v.richText) { rowData.push(v.richText.map(r => r.text ?? '').join('')); return }
+                    rowData.push(String(v))
                 })
+                jsonData.push(rowData)
+            })
 
-                setPreviewData(processed)
-                setErrors(validationErrors)
-            } catch (error) {
-                console.error("Error parsing file", error)
-                setErrors([{ row: 'General', errors: ['Error al leer el archivo. Asegúrate que sea un Excel válido.'] }])
-            } finally {
-                setIsProcessing(false)
-            }
+            const processed = []
+            const validationErrors = []
+
+            jsonData.forEach((row, index) => {
+                const result = validatePlayerRow(row)
+                // Skip completely empty rows seamlessly
+                if (result.isEmpty) return;
+
+                if (result.isValid) {
+                    processed.push({ ...result.data, originalIndex: index })
+                } else {
+                    validationErrors.push({ row: index + 2, errors: result.errors, data: row })
+                }
+            })
+
+            setPreviewData(processed)
+            setErrors(validationErrors)
+        } catch (error) {
+            console.error("Error parsing file", error)
+            setErrors([{ row: 'General', errors: ['Error al leer el archivo. Asegúrate que sea un Excel válido.'] }])
+        } finally {
+            setIsProcessing(false)
         }
-        reader.readAsArrayBuffer(file)
     }
 
     const handleConfirm = () => {
@@ -125,14 +133,14 @@ const ExcelUploader = ({ isOpen, onClose, team, category, onUpload }) => {
                                 </p>
                             </div>
                             <button onClick={() => { setFile(null); setPreviewData([]); setErrors([]) }} className="btn-icon">
-                                <XCircle size={24} />
+                                <CircleX size={24} />
                             </button>
                         </div>
 
                         {errors.length > 0 && (
                             <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                                 <h4 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                    <AlertTriangle size={18} />
+                                    <TriangleAlert size={18} />
                                     Errores Detectados ({errors.length})
                                 </h4>
                                 <ul style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', paddingLeft: '1.5rem' }}>
@@ -163,7 +171,7 @@ const ExcelUploader = ({ isOpen, onClose, team, category, onUpload }) => {
                                             <td>{p.fullName}</td>
                                             <td>{p.dni}</td>
                                             <td style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                                <CheckCircle size={14} /> Válido
+                                                <CircleCheck size={14} /> Válido
                                             </td>
                                         </tr>
                                     ))}

@@ -24,7 +24,6 @@ export const classifyRow = (row, headerMap, documentTitle) => {
 
     if (headerMap && isMatchRow(row, headerMap)) {
         // Asegurarnos que no estamos clasificando un titulo de categoria como match
-        const fechaVal = normalizeText(row[headerMap.fecha]);
         const catKeywords = ['infantil', 'juvenil', 'primera', 'cadete', 'kdt', 'escuelita', 'lanzamiento'];
         
         // Si la fila tiene casi todo el mismo texto en todas las columnas, es un titulo combinado, no un match

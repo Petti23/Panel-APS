@@ -17,7 +17,7 @@ export const parseSection = (section) => {
         erroresFila: []
     };
 
-    section.rows.forEach((rowInfo, idx) => {
+    section.rows.forEach((rowInfo) => {
         if (rowInfo.type === 'informative') {
             const msg = rowInfo.data.map(c => sanitizeCellValue(c)).filter(Boolean).join(' ');
             const lowerMsg = msg.toLowerCase();

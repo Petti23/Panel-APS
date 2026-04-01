@@ -1,6 +1,5 @@
 import React from 'react';
 import Modal from './Modal';
-import { FileSpreadsheet, XCircle, CheckCircle } from 'lucide-react';
 import ScheduleImportSummary from './ScheduleImportSummary';
 import ScheduleImportErrors from './ScheduleImportErrors';
 

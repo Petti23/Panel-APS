@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Calendar, Clock, MapPin, Upload } from 'lucide-react'
+import { Plus, SquarePen, Trash2, Calendar, Clock, MapPin, Upload } from 'lucide-react'
 import Modal from '../components/Modal'
 import UploadDrawer from '../components/UploadDrawer'
 import { useData } from '../context/DataContext'
@@ -239,7 +239,7 @@ const Games = () => {
                                             <td style={{ textAlign: 'right' }}>
                                                 <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
                                                     <button onClick={() => handleOpenModal(g)} className="btn-icon" title="Editar">
-                                                        <Edit2 size={16} />
+                                                        <SquarePen size={16} />
                                                     </button>
                                                     <button onClick={() => handleDelete(g.id)} className="btn-icon delete" title="Eliminar">
                                                         <Trash2 size={16} />

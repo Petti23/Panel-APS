@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import './Pages.css';
 
 const ScheduleImportErrors = ({ errors, warnings }) => {
@@ -10,7 +10,7 @@ const ScheduleImportErrors = ({ errors, warnings }) => {
             {(errors && errors.length > 0) && (
                 <>
                     <h4 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', margin: '0 0 0.5rem 0' }}>
-                        <AlertTriangle size={16} />
+                        <TriangleAlert size={16} />
                         Errores Detectados ({errors.length})
                     </h4>
                     <ul style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', paddingLeft: '1.5rem', marginBottom: warnings?.length > 0 ? '1rem' : 0 }}>
@@ -22,7 +22,7 @@ const ScheduleImportErrors = ({ errors, warnings }) => {
             {(warnings && warnings.length > 0) && (
                 <>
                     <h4 style={{ color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.5rem 0' }}>
-                        <AlertTriangle size={16} />
+                        <TriangleAlert size={16} />
                         Advertencias ({warnings.length})
                     </h4>
                     <ul style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', paddingLeft: '1.5rem', margin: 0 }}>

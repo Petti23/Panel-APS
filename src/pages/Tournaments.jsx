@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Edit2, Trash2, Trophy } from 'lucide-react'
+import { Plus, SquarePen, Trash2, Trophy } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useData } from '../context/DataContext'
 import { CATEGORIES } from '../constants/categories'
@@ -104,7 +104,7 @@ const Tournaments = () => {
                                     <td style={{ color: 'var(--text-muted)' }}>{formatDate(t.endDate)}</td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
-                                            <button onClick={() => handleOpenModal(t)} className="btn-icon" title="Editar"><Edit2 size={16} /></button>
+                                            <button onClick={() => handleOpenModal(t)} className="btn-icon" title="Editar"><SquarePen size={16} /></button>
                                             <button onClick={() => handleDelete(t.id)} className="btn-icon delete" title="Eliminar"><Trash2 size={16} /></button>
                                         </div>
                                     </td>

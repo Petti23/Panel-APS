@@ -37,7 +37,7 @@ export const detectSections = (matrix) => {
     let fallbackHeaderMap = null;
     const documentTitle = detectDocumentTitle(matrix);
 
-    matrix.forEach((row, index) => {
+    matrix.forEach((row) => {
         const classifierResult = classifyRow(row, fallbackHeaderMap, documentTitle);
 
         if (classifierResult.type === 'category_title') {

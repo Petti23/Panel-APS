@@ -1,8 +1,4 @@
-import { normalizeText } from './normalizeText';
-
 export const parseCategoryTitle = (rawTitle) => {
-    const normalized = normalizeText(rawTitle);
-    
     const yearMatch = rawTitle.match(/\b(20\d{2})\b/);
     const anio = yearMatch ? yearMatch[1] : null;
 
