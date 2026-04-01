@@ -1,22 +1,39 @@
 import { supabase } from '../supabase'
 
-const TABLE = 'players'
+const TABLE = 'player'
 
 // Mapeo snake_case (DB) ↔ camelCase (app)
 const fromRow = (row) => ({
-    id: row.id,
-    fullName: row.full_name,
-    dni: row.dni,
-    category: row.category,
-    teamId: row.team_id,
+    id: row.player_id,
+    fullName: `${row.first_name} ${row.last_name}`.trim(),
+    firstName: row.first_name,
+    lastName: row.last_name,
+    // 'dni' se mantiene como alias de national_id para compatibilidad con la UI
+    dni: row.national_id,
+    nationalId: row.national_id,
+    birthDate: row.birth_date,
+    batHand: row.bat_hand,
+    throwHand: row.throw_hand,
 })
 
-const toRow = ({ fullName, dni, category, teamId }) => ({
-    full_name: fullName,
-    dni: dni || null,
-    category,
-    team_id: teamId || null,
-})
+const toRow = ({ fullName, firstName, lastName, nationalId, dni, birthDate, batHand, throwHand }) => {
+    // Soporta nombre completo o separado
+    let first = firstName
+    let last = lastName
+    if ((!first || !last) && fullName) {
+        const parts = fullName.trim().split(' ')
+        first = first || parts[0]
+        last = last || parts.slice(1).join(' ') || parts[0]
+    }
+    return {
+        first_name: first || '',
+        last_name: last || '',
+        national_id: nationalId || dni || null,
+        birth_date: birthDate || null,
+        bat_hand: batHand || 'R',
+        throw_hand: throwHand || 'R',
+    }
+}
 
 export const fetchPlayers = async () => {
     const { data, error } = await supabase
@@ -41,7 +58,7 @@ export const updatePlayer = async (id, player) => {
     const { data, error } = await supabase
         .from(TABLE)
         .update(toRow(player))
-        .eq('id', id)
+        .eq('player_id', id)
         .select()
         .single()
     if (error) throw error
@@ -52,6 +69,6 @@ export const deletePlayer = async (id) => {
     const { error } = await supabase
         .from(TABLE)
         .delete()
-        .eq('id', id)
+        .eq('player_id', id)
     if (error) throw error
 }

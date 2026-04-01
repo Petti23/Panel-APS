@@ -266,7 +266,6 @@ Game header record.
 | `game_id` | `bigserial` | NO | auto | **PK** |
 | `tournament_id` | `bigint` | NO | — | **FK** → `tournament` |
 | `scheduled_datetime` | `timestamptz` | NO | — | Scheduled date & time |
-| `venue` | `text` | YES | — | Stadium / venue name |
 | `field` | `text` | YES | — | Field number or name |
 | `home_team_id` | `bigint` | NO | — | **FK** → `team` (home) |
 | `away_team_id` | `bigint` | NO | — | **FK** → `team` (away) |
@@ -289,7 +288,6 @@ CREATE TABLE IF NOT EXISTS game (
   game_id              bigserial    PRIMARY KEY,
   tournament_id        bigint       NOT NULL REFERENCES tournament(tournament_id) ON DELETE RESTRICT,
   scheduled_datetime   timestamptz  NOT NULL,
-  venue                text,
   field                text,
   home_team_id         bigint       NOT NULL REFERENCES team(team_id) ON DELETE RESTRICT,
   away_team_id         bigint       NOT NULL REFERENCES team(team_id) ON DELETE RESTRICT,

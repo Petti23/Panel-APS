@@ -28,11 +28,8 @@ const Games = () => {
         time: ''
     })
 
-    // Derived state for the form
-    const selectedTournament = tournaments.find(t => t.id == formData.tournamentId)
-    const availableTeams = selectedTournament
-        ? teams.filter(t => t.category === selectedTournament.category)
-        : []
+    // Derived state for the form — sin filtro por categoría (teams ya no tienen category)
+    const availableTeams = formData.tournamentId ? teams : []
 
     const handleOpenModal = (game = null) => {
         if (game) {

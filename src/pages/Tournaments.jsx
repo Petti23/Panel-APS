@@ -13,15 +13,15 @@ const Tournaments = () => {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [currentTournament, setCurrentTournament] = useState(null)
     const [filterCategory, setFilterCategory] = useState('')
-    const [formData, setFormData] = useState({ name: '', category: CATEGORIES[0], startDate: '', endDate: '' })
+    const [formData, setFormData] = useState({ name: '', season: new Date().getFullYear(), category: CATEGORIES[0], startDate: '', endDate: '' })
 
     const handleOpenModal = (tournament = null) => {
         if (tournament) {
             setCurrentTournament(tournament)
-            setFormData({ name: tournament.name, category: tournament.category || CATEGORIES[0], startDate: tournament.startDate || '', endDate: tournament.endDate || '' })
+            setFormData({ name: tournament.name, season: tournament.season || new Date().getFullYear(), category: tournament.category || CATEGORIES[0], startDate: tournament.startDate || '', endDate: tournament.endDate || '' })
         } else {
             setCurrentTournament(null)
-            setFormData({ name: '', category: CATEGORIES[0], startDate: '', endDate: '' })
+            setFormData({ name: '', season: new Date().getFullYear(), category: CATEGORIES[0], startDate: '', endDate: '' })
         }
         setIsModalOpen(true)
     }
@@ -79,6 +79,7 @@ const Tournaments = () => {
                         <tr>
                             <th>Nombre del Torneo</th>
                             <th>Categoría</th>
+                            <th>Temporada</th>
                             <th>Inicio</th>
                             <th>Fin</th>
                             <th style={{ textAlign: 'right' }}>Acciones</th>
@@ -87,7 +88,7 @@ const Tournaments = () => {
                     <tbody>
                         {filtered.length === 0 ? (
                             <tr>
-                                <td colSpan="5">
+                                <td colSpan="6">
                                     <div className="empty-state" style={{ border: 'none', padding: '3rem' }}>
                                         <div className="empty-state-icon"><Trophy size={22} /></div>
                                         <h3>Sin torneos</h3>
@@ -97,9 +98,10 @@ const Tournaments = () => {
                             </tr>
                         ) : (
                             filtered.map((t) => (
-                                <tr key={t.id}>
+                                        <tr key={t.id}>
                                     <td style={{ fontWeight: 700 }}>{t.name}</td>
                                     <td><span className="category-badge">{t.category}</span></td>
+                                    <td style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{t.season}</td>
                                     <td style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{formatDate(t.startDate)}</td>
                                     <td style={{ color: 'var(--text-muted)' }}>{formatDate(t.endDate)}</td>
                                     <td style={{ textAlign: 'right' }}>
@@ -127,15 +129,28 @@ const Tournaments = () => {
                             required autoFocus
                         />
                     </div>
-                    <div className="form-group">
-                        <label>Categoría</label>
-                        <select
-                            value={formData.category}
-                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                            required
-                        >
-                            {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                        </select>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>Categoría</label>
+                            <select
+                                value={formData.category}
+                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                required
+                            >
+                                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label>Temporada</label>
+                            <input
+                                type="number"
+                                min="2000"
+                                max="2100"
+                                value={formData.season}
+                                onChange={(e) => setFormData({ ...formData, season: e.target.value })}
+                                required
+                            />
+                        </div>
                     </div>
                     <div className="form-row">
                         <div className="form-group">

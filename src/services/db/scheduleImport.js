@@ -4,16 +4,16 @@ import { parseDateToISO } from '../../utils/schedule/parseDate'
 import { isPlaceholderTeam } from '../../utils/schedule/isPlaceholderTeam'
 
 /**
- * Importación masiva de fixture desde Excel.
- * Usa upsert para ser idempotente: reimportar el mismo Excel no genera duplicados.
+ * Importación masiva de fixture desde Excel al nuevo esquema en inglés.
+ * Tablas: tournament, team, game (singulares).
  *
  * @param {object} data - Resultado del parser de Excel ({ categorias: [...] })
- * @returns {{ addedTournaments, addedTeams, addedGames }} - Conteo de registros nuevos
+ * @returns {{ addedTournaments, addedTeams, addedGames }}
  */
 export const importScheduleToDb = async (data) => {
     // ── 1. Recopilar torneos y equipos únicos ─────────────────────
-    const tournamentsMap = new Map() // "name|category" → { name, category }
-    const teamsMap = new Map()       // "name|category" → { name, category }
+    const tournamentsMap = new Map()  // "name|category|season" → { name, category, season }
+    const teamNamesSet = new Set()
     const rawGames = []
 
     for (const cat of data.categorias) {
@@ -24,106 +24,96 @@ export const importScheduleToDb = async (data) => {
             cat.tournamentName ||
             `${cat.categoria} ${cat.torneo || ''} ${cat.anio || ''}`.trim()
         )
+        const season = cat.anio ? parseInt(cat.anio, 10) : new Date().getFullYear()
 
-        const tKey = `${normalizeText(officialTournamentName)}|${normalizeText(officialCategory)}`
+        const tKey = `${normalizeText(officialTournamentName)}|${normalizeText(officialCategory)}|${season}`
         if (!tournamentsMap.has(tKey)) {
-            tournamentsMap.set(tKey, { name: officialTournamentName, category: officialCategory })
+            tournamentsMap.set(tKey, { name: officialTournamentName, category: officialCategory, season })
         }
 
         for (const p of cat.partidos) {
-            // Omitir partidos cuyos equipos son placeholders de llave (GP1, 1°, etc.)
             if (isPlaceholderTeam(p.local) || isPlaceholderTeam(p.visitante)) continue
 
-            const hKey = `${normalizeText(p.local)}|${normalizeText(officialCategory)}`
-            if (!teamsMap.has(hKey)) teamsMap.set(hKey, { name: p.local, category: officialCategory })
-
-            const vKey = `${normalizeText(p.visitante)}|${normalizeText(officialCategory)}`
-            if (!teamsMap.has(vKey)) teamsMap.set(vKey, { name: p.visitante, category: officialCategory })
+            teamNamesSet.add(p.local)
+            teamNamesSet.add(p.visitante)
 
             rawGames.push({
                 tournamentKey: tKey,
-                homeTeamKey: hKey,
-                visitorTeamKey: vKey,
-                field: p.diamante || 'A confirmar',
+                homeTeamName: p.local,
+                awayTeamName: p.visitante,
+                field: p.diamante || null,
                 date: parseDateToISO(p.fechaTexto),
                 time: p.hora,
             })
         }
     }
 
-    // ── 2. Garantizar que las categorías existen en la tabla categories ─
-    // La FK tournaments.category → categories.name requiere que el valor
-    // exista antes del insert. Se usa upsert con ignoreDuplicates para no
-    // pisar los datos de min_age/max_age ya cargados con el seed.
-    const uniqueCategories = [
-        ...new Set([
-            ...[...tournamentsMap.values()].map((t) => t.category),
-            ...[...teamsMap.values()].map((t) => t.category),
-        ]),
-    ]
-    const { error: catErr } = await supabase
-        .from('categories')
-        .upsert(
-            uniqueCategories.map((name) => ({ name })),
-            { onConflict: 'name', ignoreDuplicates: true }
-        )
-    if (catErr) throw catErr
-
-    // ── 3. Upsert torneos (obtiene IDs existentes o recién creados) ─
+    // ── 2. Upsert torneos (unique: name, season, category) ────────
     const tournamentRows = [...tournamentsMap.values()]
     const { data: upsertedTournaments, error: tErr } = await supabase
-        .from('tournaments')
-        .upsert(tournamentRows, { onConflict: 'name,category' })
+        .from('tournament')
+        .upsert(tournamentRows, { onConflict: 'name,season,category' })
         .select()
     if (tErr) throw tErr
 
     const tournamentIdMap = new Map(
         upsertedTournaments.map((t) => [
-            `${normalizeText(t.name)}|${normalizeText(t.category)}`,
-            t.id,
+            `${normalizeText(t.name)}|${normalizeText(t.category)}|${t.season}`,
+            t.tournament_id,
         ])
     )
 
-    // ── 4. Upsert equipos ──────────────────────────────────────────
-    const teamRows = [...teamsMap.values()]
-    const { data: upsertedTeams, error: tmErr } = await supabase
-        .from('teams')
-        .upsert(teamRows, { onConflict: 'name,category' })
-        .select()
-    if (tmErr) throw tmErr
+    // ── 3. Equipos: obtener existentes e insertar los nuevos ──────
+    const teamNamesList = [...teamNamesSet]
+    const { data: existingTeams, error: etErr } = await supabase
+        .from('team')
+        .select('team_id, name')
+        .in('name', teamNamesList)
+    if (etErr) throw etErr
 
-    const teamIdMap = new Map(
-        upsertedTeams.map((t) => [
-            `${normalizeText(t.name)}|${normalizeText(t.category)}`,
-            t.id,
-        ])
-    )
+    const existingByName = new Map(existingTeams.map((t) => [normalizeText(t.name), t.team_id]))
 
-    // ── 5. Construir filas de partidos ─────────────────────────────
+    const newTeamNames = teamNamesList.filter((n) => !existingByName.has(normalizeText(n)))
+    let insertedByName = new Map()
+    if (newTeamNames.length > 0) {
+        const { data: inserted, error: itErr } = await supabase
+            .from('team')
+            .insert(newTeamNames.map((name) => ({ name })))
+            .select()
+        if (itErr) throw itErr
+        inserted.forEach((t) => insertedByName.set(normalizeText(t.name), t.team_id))
+    }
+
+    const teamIdMap = new Map([...existingByName, ...insertedByName])
+
+    // ── 4. Construir e insertar partidos ──────────────────────────
     const gameRows = rawGames
-        .map((g) => ({
-            tournament_id: tournamentIdMap.get(g.tournamentKey),
-            home_team_id: teamIdMap.get(g.homeTeamKey),
-            visitor_team_id: teamIdMap.get(g.visitorTeamKey),
-            field: g.field,
-            date: g.date || null,
-            time: g.time || null,
-        }))
-        .filter((g) => g.tournament_id && g.home_team_id && g.visitor_team_id)
-
-    // ── 6. Upsert partidos (ignorar duplicados exactos) ────────────
-    const { data: upsertedGames, error: gErr } = await supabase
-        .from('games')
-        .upsert(gameRows, {
-            onConflict: 'tournament_id,home_team_id,visitor_team_id,date,time',
-            ignoreDuplicates: true,
+        .map((g) => {
+            const tournament_id = tournamentIdMap.get(g.tournamentKey)
+            const home_team_id = teamIdMap.get(normalizeText(g.homeTeamName))
+            const away_team_id = teamIdMap.get(normalizeText(g.awayTeamName))
+            if (!tournament_id || !home_team_id || !away_team_id || !g.date) return null
+            const scheduled_datetime = g.time
+                ? `${g.date}T${g.time}:00`
+                : `${g.date}T00:00:00`
+            return { tournament_id, home_team_id, away_team_id, field: g.field, scheduled_datetime }
         })
-        .select()
-    if (gErr) throw gErr
+        .filter(Boolean)
+
+    let addedGames = 0
+    if (gameRows.length > 0) {
+        const { data: insertedGames, error: gErr } = await supabase
+            .from('game')
+            .insert(gameRows)
+            .select()
+        if (gErr) throw gErr
+        addedGames = insertedGames?.length ?? 0
+    }
 
     return {
         addedTournaments: tournamentRows.length,
-        addedTeams: teamRows.length,
-        addedGames: upsertedGames?.length ?? 0,
+        addedTeams: newTeamNames.length,
+        addedGames,
     }
 }
+

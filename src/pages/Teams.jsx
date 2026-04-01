@@ -3,7 +3,6 @@ import { Plus, SquarePen, Trash2, Shield, Upload } from 'lucide-react'
 import Modal from '../components/Modal'
 import ExcelUploader from '../components/ExcelUploader'
 import { useData } from '../context/DataContext'
-import { CATEGORIES } from '../constants/categories'
 import '../components/Table.css'
 import '../components/Pages.css'
 
@@ -12,18 +11,17 @@ const Teams = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [currentTeam, setCurrentTeam] = useState(null)
-    const [formData, setFormData] = useState({ name: '', category: CATEGORIES[0] })
-    const [filterCategory, setFilterCategory] = useState('Todas')
+    const [formData, setFormData] = useState({ name: '', club: '' })
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
     const [uploadTargetTeam, setUploadTargetTeam] = useState(null)
 
     const handleOpenModal = (team = null) => {
         if (team) {
             setCurrentTeam(team)
-            setFormData({ name: team.name, category: team.category })
+            setFormData({ name: team.name, club: team.club || '' })
         } else {
             setCurrentTeam(null)
-            setFormData({ name: '', category: CATEGORIES[0] })
+            setFormData({ name: '', club: '' })
         }
         setIsModalOpen(true)
     }
@@ -58,13 +56,11 @@ const Teams = () => {
             alert('No se encontraron jugadores para cargar.')
             return
         }
-        addPlayers(playersData.map(p => ({ ...p, teamId: uploadTargetTeam.id, category: uploadTargetTeam.category })))
-        alert(`Se cargaron ${playersData.length} jugadores al equipo ${uploadTargetTeam.name}`)
+        addPlayers(playersData.map(p => ({ ...p })))
+        alert(`Se cargaron ${playersData.length} jugadores para el equipo ${uploadTargetTeam.name}`)
         setIsUploadModalOpen(false)
         setUploadTargetTeam(null)
     }
-
-    const filteredTeams = filterCategory === 'Todas' ? teams : teams.filter(t => t.category === filterCategory)
 
     return (
         <div className="animate-fade-in">
@@ -81,24 +77,14 @@ const Teams = () => {
                 </div>
             </div>
 
-            <div className="filter-bar">
-                <div className="filter-group wide">
-                    <label>Filtrar por Categoría</label>
-                    <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-                        <option value="Todas">Todas las Categorías</option>
-                        {CATEGORIES.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
+
 
             <div className="table-container">
                 <table className="data-table">
                     <thead>
                         <tr>
                             <th>Equipo</th>
-                            <th>Categoría</th>
+                            <th>Club</th>
                             <th style={{ textAlign: 'right' }}>Acciones</th>
                         </tr>
                     </thead>
@@ -114,7 +100,7 @@ const Teams = () => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredTeams.map((t) => (
+                            teams.map((t) => (
                                 <tr key={t.id}>
                                     <td>
                                         <div className="team-cell">
@@ -122,7 +108,7 @@ const Teams = () => {
                                             <span style={{ fontWeight: 700 }}>{t.name}</span>
                                         </div>
                                     </td>
-                                    <td><span className="category-badge">{t.category}</span></td>
+                                    <td style={{ color: 'var(--text-secondary)' }}>{t.club || '—'}</td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
                                             <button onClick={() => handleOpenUpload(t)} className="btn-icon" title="Cargar jugadores (Excel)">
@@ -157,16 +143,13 @@ const Teams = () => {
                         />
                     </div>
                     <div className="form-group">
-                        <label>Categoría</label>
-                        <select
-                            value={formData.category}
-                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                            required
-                        >
-                            {CATEGORIES.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                        </select>
+                        <label>Club (opcional)</label>
+                        <input
+                            type="text"
+                            placeholder="Ej. Club Atlético"
+                            value={formData.club}
+                            onChange={(e) => setFormData({ ...formData, club: e.target.value })}
+                        />
                     </div>
                     <div className="form-actions">
                         <button type="button" onClick={handleCloseModal} className="btn btn-outline">Cancelar</button>

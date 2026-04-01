@@ -1,12 +1,14 @@
 import { supabase } from '../supabase'
 
-const TABLE = 'categories'
-
+// La nueva DB no tiene tabla de categorías propia.
+// Se derivan de los valores únicos del campo category en tournament.
 export const fetchCategories = async () => {
     const { data, error } = await supabase
-        .from(TABLE)
-        .select('name, sort_order')
-        .order('sort_order', { ascending: true })
+        .from('tournament')
+        .select('category')
+        .not('category', 'is', null)
+        .order('category', { ascending: true })
     if (error) throw error
-    return data
+    const unique = [...new Set(data.map((r) => r.category).filter(Boolean))]
+    return unique.map((name) => ({ name }))
 }
