@@ -87,19 +87,23 @@ Web-APS/
 │   │   └── supabase.js         # Inicialización del cliente Supabase (singleton exportado)
 │   │
 │   ├── services/
-│   │   ├── gameService.js      # Queries relacionadas a partidos
+│   │   ├── gameService.js      # Queries relacionadas a partidos (getRecentGames, getGameDetail)
 │   │   ├── playerService.js    # Queries de jugadores
 │   │   └── teamService.js      # Queries de equipos
+│   │
+│   ├── hooks/
+│   │   ├── useLiveMatch.js         # Suscripción broadcast para un partido individual (modal)
+│   │   └── useLiveGameScores.js    # Suscripción broadcast para N partidos (lista de resultados)
 │   │
 │   ├── components/
 │   │   ├── common/
 │   │   │   └── LoadingSpinner.jsx   # Spinner animado con framer-motion
-│   │   ├── results/                 # (vacío) — pendiente de implementar
+│   │   ├── results/
+│   │   │   └── GameModal.jsx        # Modal detalle de partido: score, jugadas, lineup, defensa
 │   │   ├── sections/
-│   │   │   └── Resultados.jsx       # (vacío) — pendiente de implementar
+│   │   │   └── Resultados.jsx       # (vacío) — pendiente de extraer de App.jsx
 │   │   └── stats/                   # (vacío) — pendiente de implementar
 │   │
-│   ├── hooks/                       # (vacío) — pendiente de implementar
 │   └── assets/
 │       └── logo.png                 # Logo APS PLAY
 │
@@ -244,14 +248,18 @@ interface GameRecord {
 
 ### 5.3 Cálculo del score en el frontend
 
-En `App.jsx`, para cada `game` del array:
+> ⚠️ **`game_team.runs` NO se usa para partidos en curso.** La app planilla solo escribe `game_id, team_id, is_home` en `game_team` durante el partido. El campo `runs` queda en 0 hasta que el partido se cierra. El score real se calcula desde `plate_appearance + runner_advance`.
 
+**Para partidos `in_progress`** — `App.jsx` usa `useLiveGameScores` que hace:
+1. Al montar: query `plate_appearance.batting_team_id` + `runner_advance(run_scored=true)` → score inicial desde DB
+2. Al llegar broadcast: recalcula desde `plays[]` del payload usando Set de player IDs del equipo local
+
+**Para partidos cerrados** — sigue usando `game_team.runs` (ya tiene el total final):
 ```javascript
-const homeRuns = game.game_team?.find(r => r.team_id === game.home_team_id)?.runs ?? 0
-const awayRuns = game.game_team?.find(r => r.team_id === game.away_team_id)?.runs ?? 0
+const live = liveScores[game.game_id]  // del hook useLiveGameScores
+const homeRuns = live?.homeRuns ?? game.game_team?.find(r => r.team_id === game.home_team_id)?.runs ?? 0
+const awayRuns = live?.awayRuns ?? game.game_team?.find(r => r.team_id === game.away_team_id)?.runs ?? 0
 ```
-
-Los datos de `game_team.runs` son un **cache** actualizado por la app planilla. Son derivables de las tablas de eventos pero se guardan aquí para performance.
 
 ### 5.4 Estado del partido (`game.status`)
 
@@ -301,15 +309,47 @@ Todos los services siguen el mismo patrón: importan `supabase` de `lib/supabase
 
 ```
 getRecentGames() → GameRecord[]
-  Query: game + home_team (join) + away_team (join) + game_team (join)
+  Query: game + home_team (join team) + away_team (join team) + game_team (join)
   Order: scheduled_datetime DESC
   Limit: 20
+
+getGameDetail(gameId) → GameDetailRecord | null
+  Query 1: game + home_team + away_team + game_team + tournament (single)
+  Query 2: game_player con join player (ordered by batting_order)
+  Query 3: plate_appearance con join batter + pitcher + play + runner_advance
+  Returns: { ...game, lineup: GamePlayer[], plays: PlateAppearance[] }
 
 getGameStats() → number
   Query: COUNT de game
 ```
 
-**Nota:** `getGameStats()` devuelve el total de partidos pero aún no se usa en la UI (está disponible para la sección de estadísticas).
+**`getGameDetail` — detalle del objeto retornado:**
+```typescript
+interface GameDetailRecord {
+  // todos los campos de game +
+  home_team: Team          // join completo
+  away_team: Team
+  game_team: GameTeam[]    // 2 filas: is_home true/false
+  tournament: Tournament
+  lineup: Array<{
+    game_id, team_id, player_id, batting_order,
+    defensive_position, is_starter, lineup_role,
+    player: { player_id, first_name, last_name, bat_hand, throw_hand }
+  }>
+  plays: Array<{
+    plate_appearance_id, game_id, inning, half, pa_index,
+    batting_team_id, batter_id, pitcher_id, outs_start,
+    batter: { player_id, first_name, last_name }
+    pitcher: { player_id, first_name, last_name }
+    play: { play_id, play_type, rbi, runs_on_play, outs_on_play,
+            counts_ab, counts_hit, bases_hit, description, ... }
+    runner_advance: Array<{
+      advance_id, runner_id, start_base, end_base,
+      reason, run_scored, out_flag, out_type
+    }>
+  }>
+}
+```
 
 ### `playerService.js`
 
@@ -377,11 +417,52 @@ interface ResultadosProps {
 }
 ```
 
-### `components/results/` y `components/stats/`
+### `components/results/GameModal.jsx`
 
-Ambas carpetas están **vacías**. Están preparadas para:
-- `results/`: tarjeta individual de un partido, box score, etc.
-- `stats/`: tablas de estadísticas, leaderboards.
+Modal completo de detalle de partido. Se abre al hacer click en una `result-card`.
+
+**Props:**
+```typescript
+{ gameId: number, onClose: () => void }
+```
+
+**Estructura interna:**
+- Usa `getGameDetail(gameId)` para el estado inicial (DB)
+- Usa `useLiveMatch(gameId)` para recibir broadcast en tiempo real
+- Si hay broadcast activo con plays, usa esos datos (tiempo real); si no, usa los plays de la DB
+
+**3 tabs:**
+| Tab | ID | Contenido |
+|-----|----|-----------|
+| Jugadas | `pbp` | Play-by-play agrupado por entrada/half |
+| Lineup | `lineup` | Tabla de bateadores titular de cada equipo |
+| Defensa | `field` | Grid visual del campo con posiciones |
+
+**Sub-componentes internos:**
+- `Linescore` — tabla de carreras por entrada (R/H/E). Los totales R usan `homeRunsDisplay/awayRunsDisplay` calculados desde broadcast si está activo
+- `PlayByPlay` — agrupa jugadas reales (filtra `INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) por `inning + half`
+- `LineupTable` — filtra `lineup` por `Number(team_id) === Number(teamId) && is_starter !== false`, ordenado por `batting_order`
+- `DefenseField` — muestra posiciones `P C 1B 2B 3B SS LF CF RF` con avatar y apellido
+- `broadcastPlaysToDisplay(plays, detail)` — convierte play[] del broadcast (códigos like `HR`, `1B`) al formato interno de plate_appearance de la DB usando `BROADCAST_CODE_TO_DB` mapping
+
+**BROADCAST_CODE_TO_DB mapping:**
+```javascript
+{ '1B':'SINGLE', '2B':'DOUBLE', '3B':'TRIPLE',
+  'HR':'HOME_RUN', 'IPHR':'HOME_RUN',
+  'BB':'WALK', 'IBB':'INTENTIONAL_WALK',
+  'HP':'HIT_BY_PITCH', 'HBP':'HIT_BY_PITCH',
+  'K':'STRIKEOUT', 'Ks':'STRIKEOUT', 'Kc':'STRIKEOUT',
+  'F':'FLYOUT', 'FO':'FLYOUT', 'L':'LINEOUT',
+  'G':'GROUNDOUT', 'P':'POPOUT',
+  'E':'REACH_ON_ERROR', 'FC':'FIELDERS_CHOICE',
+  'SAC':'SAC_BUNT', 'SF':'SAC_FLY' }
+```
+
+**Cálculo de carreras en HomeRun (broadcast):** `bases[3] === true` → se agrega un `runner_advance` ficticio `{ run_scored: true, end_base: 4 }` para el bateador, evitando que el linescore muestre 0.
+
+### `components/stats/`
+
+Vacía. Preparada para tablas de estadísticas y leaderboards.
 
 ---
 
@@ -400,6 +481,14 @@ const [loading, setLoading] = useState(true)      // estado de carga general
 const [isMenuOpen, setIsMenuOpen] = useState(false) // sidebar móvil
 const [activeSection, setActiveSection] = useState('RESULTADOS') // sección activa
 const [error, setError] = useState(null)          // mensaje de error global
+const [selectedGameId, setSelectedGameId] = useState(null) // ID del partido abierto en modal
+
+// Scores en tiempo real (broadcast) para partidos en curso
+const liveGames = games
+  .filter(g => g.status === 'in_progress')
+  .map(g => ({ gameId: g.game_id, homeTeamId: g.home_team_id }))
+const liveScores = useLiveGameScores(liveGames)
+// liveScores: { [gameId]: { homeRuns, awayRuns, connected } }
 ```
 
 ### Secciones disponibles (menuItems)
@@ -460,7 +549,7 @@ rc-arrow               → › chevron
 
 ## 10. Tiempo real: Supabase Broadcast
 
-> Esta funcionalidad **no está implementada aún** en la web pero la documentación y la DB la soportan completamente. Aquí se describe cómo implementarla.
+> ✅ **Implementado.** La web recibe broadcast en tiempo real tanto en la lista de resultados como dentro del modal de partido.
 
 ### Canal
 
@@ -528,62 +617,86 @@ interface Play {
 | `SAC` | `SAC_BUNT` | Bunt de sacrificio |
 | `SF` | `SAC_FLY` | Fly de sacrificio |
 
-### 10.2 Implementación recomendada (custom hook)
+### 10.2 Hook `useLiveMatch` — para el modal (1 partido)
 
-Crear `src/hooks/useLiveMatch.js`:
+**Archivo:** `src/hooks/useLiveMatch.js`
 
 ```javascript
-import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-
 export function useLiveMatch(gameId) {
   const [broadcast, setBroadcast] = useState(null)
-
-  useEffect(() => {
-    if (!gameId) return
-
-    const channel = supabase
-      .channel(`match-live-${gameId}`)
-      .on('broadcast', { event: 'game_update' }, ({ payload }) => {
-        setBroadcast(payload)  // reemplazar estado completo, no merge
-      })
-      .subscribe()
-
-    return () => supabase.removeChannel(channel)
-  }, [gameId])
-
-  return broadcast
+  // se suscribe a match-live-{gameId}, config: { broadcast: { ack: false } }
+  // al recibir 'game_update' → setBroadcast(payload)  // SIEMPRE reemplazar, nunca merge
+  // cleanup en unmount: supabase.removeChannel(channel)
+  return broadcast  // GameBroadcast | null
 }
 ```
 
-### 10.3 Calcular carreras desde plays[]
+Usado por `GameModal.jsx`. Retorna `null` hasta el primer mensaje recibido.
+
+### 10.3 Hook `useLiveGameScores` — para la lista (N partidos)
+
+**Archivo:** `src/hooks/useLiveGameScores.js`
+
+Suscribe a múltiples partidos simultáneamente y calcula sus scores.
+
+**Input:** `Array<{ gameId: number, homeTeamId: number }>` (solo partidos `in_progress`)
+
+**Output:** `{ [gameId]: { homeRuns: number, awayRuns: number, connected: boolean } }`
+
+**Flujo interno:**
+1. Para cada `gameId`, crea canal `match-live-{gameId}` con `ack: false`
+2. Inmediatamente llama `fetchDbScore()` — 2 queries separadas para evitar problemas de FK:
+   - `plate_appearance` → `{ plate_appearance_id, batting_team_id }` filtrado por `game_id`
+   - `runner_advance` → `{ pa_id }` filtrado por `pa_id IN [...]` y `run_scored = true`
+   - Suma carreras por equipo y setea el estado inicial
+3. Al recibir broadcast: recalcula desde `broadcast.plays[]` usando Set de player IDs del equipo local (cacheado en `lineupCacheRef`)
+4. El broadcast siempre gana si ya tiene datos (>0); el score de DB no pisa el broadcast
+
+**Por qué 2 queries separadas para el score DB:** la nested relation de Supabase JS (`runner_advance(run_scored)`) requiere conocer el nombre exacto de la FK constraint. Al usar queries separadas + join manual en JS, se evita ese problema.
+
+### 10.4 Calcular carreras desde plays[] del broadcast
 
 ```javascript
-function getRunsForTeam(plays, playerIds) {
-  let runs = 0
-  plays
-    .filter(p => playerIds.has(p.batterId))
-    .forEach(p => {
-      if (p.bases?.[3] === true) runs++
-      if (p.runnerAdvances) {
-        Object.values(p.runnerAdvances).forEach(base => {
-          if (base === 4) runs++
-        })
-      }
-    })
-  return runs
+// En App.jsx / useLiveGameScores — cálculo desde broadcast:
+for (const p of broadcast.plays) {
+  if (SYSTEM_IDS.has(p.batterId)) continue
+  const isHome = homePlayerIds.has(String(p.batterId))
+  const batterScored = p.bases?.[3] === true ? 1 : 0          // HR, IPHR
+  const runnersScored = Object.values(p.runnerAdvances || {})
+    .filter(b => b === 4).length                               // corredores a home
+  // batterScored y runnersScored son mutuamente excluyentes — no hay doble conteo
+  if (isHome) homeRuns += batterScored + runnersScored
+  else awayRuns += batterScored + runnersScored
 }
 ```
 
-### 10.4 URL directa a partido en vivo
+### 10.5 Filtrado de jugadas del sistema
 
-La app soporta apertura directa con query param:
+```javascript
+const SYSTEM_IDS = new Set(['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB'])
+// Siempre filtrar antes de calcular scores o mostrar en el feed
+const realPlays = plays.filter(p => !SYSTEM_IDS.has(p.batterId))
+```
+
+### 10.6 Inferencia del `half` desde broadcast
+
+El broadcast no incluye `half` (top/bottom). Se infiere comparando el `team_id` del bateador con `home_team_id` del partido:
+```javascript
+half = Number(playerInfo.team_id) === Number(detail.home_team_id) ? 'B' : 'T'
+```
+**Importante:** usar `Number()` para comparar — los IDs pueden llegar como `string` o `number` según la fuente.
+
+### 10.7 Indicadores en la UI
+
+- `isBroadcasting = isLive && liveScores[gameId]?.connected` — muestra ícono 📡 en la result-card
+- Punto animado `.live-dot` — visible en `isLive` independientemente del broadcast
+- Badge `LIVE` en el modal — visible cuando `broadcastActive = !!broadcast`
+
+### 10.8 URL directa a partido en vivo (app planilla)
 
 ```
-/?match={game_id}
+https://[dominio-planilla]/?match={game_id}
 ```
-
-Ejemplo: `https://softball-statics.vercel.app/?match=42`
 
 ---
 
