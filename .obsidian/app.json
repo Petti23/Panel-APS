@@ -8,5 +8,6 @@
   "newFileLocation": "root",
   "attachmentFolderPath": "/",
   "readableLineLength": true,
-  "strictLineBreaks": false
+  "strictLineBreaks": false,
+  "promptDelete": false
 }
