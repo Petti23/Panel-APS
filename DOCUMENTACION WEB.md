@@ -460,7 +460,7 @@ const displayPlays = (() => {
 > **Bug corregido (abril 2026):** Antes, PlayByPlay y Linescore usaban **solo** `detail.plays` (DB) que depende de `postgres_changes + 1200ms delay`. Al cambiar de entrada, la 1ra PA se insertaba pero su registro `play` no existía aún → `plays.filter(pa => pa.play)` la descartaba → la jugada recién aparecía cuando la 2da PA disparaba otro refresh. Ahora `displayPlays` usa el broadcast como fuente primaria cuando está activo, dando actualización instantánea.
 
 **Cálculo de score del header:**
-El loop de score filtra `SYSTEM_IDS` (`INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) antes de sumar carreras, igual que `useLiveGameScores`.
+El loop de score filtra `SYSTEM_IDS` (`DEF_SWAP`, `DEF_SUB`, y `INNING_MARKER` por seguridad) antes de sumar carreras, igual que `useLiveGameScores`.
 
 **3 tabs:**
 | Tab | ID | Contenido |
@@ -471,10 +471,10 @@ El loop de score filtra `SYSTEM_IDS` (`INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) an
 
 **Sub-componentes internos:**
 - `Linescore` — tabla de carreras por entrada (R/H/E). Recibe `displayPlays` y los totales R usan `homeRunsDisplay/awayRunsDisplay` calculados desde broadcast si está activo
-- `PlayByPlay` — recibe `displayPlays`. Agrupa jugadas reales (filtra `INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) por `inning + half`
+- `PlayByPlay` — recibe `displayPlays` y `currentAtBat` (del broadcast cuando está activo). Agrupa jugadas reales (filtra `DEF_SWAP`, `DEF_SUB` y `INNING_MARKER` por compatibilidad) por `inning + half`. Usa `play.half` directamente del broadcast. Muestra un card **"AL BATE"** en tiempo real con el nombre del bateador actual y conteo visual de bolas (●●●● verde) y strikes (●●● rojo) que se actualiza en cada pitch.
 - `LineupTable` — filtra `lineup` por `Number(team_id) === Number(teamId) && is_starter !== false`, ordenado por `batting_order`
 - `DefenseField` — muestra posiciones `P C 1B 2B 3B SS LF CF RF` con avatar y apellido
-- `broadcastPlaysToDisplay(plays, detail)` — convierte play[] del broadcast (códigos like `HR`, `1B`) al formato interno de plate_appearance de la DB usando `BROADCAST_CODE_TO_DB` mapping. Filtra plays tipo `DEC` (decisiones incompletas sin resultado real) y `SYSTEM_IDS`
+- `broadcastPlaysToDisplay(plays, detail, broadcastPayload)` — convierte play[] del broadcast (códigos like `HR`, `1B`) al formato interno de plate_appearance de la DB usando `BROADCAST_CODE_TO_DB` mapping. Filtra plays tipo `DEC` (decisiones incompletas sin resultado real) y `SYSTEM_IDS`. Usa `broadcastPayload.homePlayerIds`/`visitorPlayerIds` para clasificar bateadores por equipo (incluye sustitutos no presentes en `detail.lineup`).
 
 **BROADCAST_CODE_TO_DB mapping:**
 ```javascript
@@ -606,13 +606,24 @@ interface GameBroadcast {
   visitorTeamId: string
   plays: Play[]        // array COMPLETO de jugadas hasta ese momento
   innings: number      // innings programados
+  currentInning?: number // entrada activa actual (calculada por la planilla)
   timestamp: number    // Unix timestamp ms
+  homePlayerIds?: string[]    // IDs de jugadores locales (incluyendo sustitutos)
+  visitorPlayerIds?: string[] // IDs de jugadores visitantes (incluyendo sustitutos)
+  currentAtBat?: {            // Turno al bate en curso (null si no hay bateador activo)
+    batterId: string
+    batterName: string
+    inning: number
+    balls: number             // 0-3
+    strikes: number           // 0-2
+  } | null
 }
 
 interface Play {
   id: string
   inning: number
-  batterId: string     // puede ser "INNING_MARKER" | "DEF_SWAP" | "DEF_SUB" → filtrar
+  half?: 'T' | 'B'    // Top (visitante batea) o Bottom (local batea)
+  batterId: string     // ID del jugador al bate
   type: PlayType       // ver tabla en sección 10.1
   result: string
   secondaryResult?: string
@@ -664,6 +675,15 @@ export function useLiveMatch(gameId) {
 
 Usado por `GameModal.jsx`. Retorna `null` hasta el primer mensaje recibido.
 
+**Protección anti-regresión:** Acepta broadcasts con más jugadas, misma cantidad con timestamp más nuevo, o menos jugadas con gap >5s (borrado legítimo). Rechaza broadcasts con menos jugadas y timestamp cercano.
+
+**`currentAtBat` en el modal:** Cuando el broadcast tiene `currentAtBat`, `GameModal.jsx` lo pasa a `PlayByPlay` que muestra un card animado "AL BATE" con:
+- Nombre del bateador actual
+- Número de entrada
+- Conteo visual: 4 dots para bolas (verde) y 3 dots para strikes (rojo)
+- Se actualiza en cada pitch (bola, strike, foul) sin esperar que se complete el turno
+- Desaparece automáticamente cuando se completa el turno (al agregarse la jugada a `plays[]`, `currentAtBat` pasa a `null`)
+
 ### 10.3 Hook `useLiveGameScores` — para la lista (N partidos)
 
 **Archivo:** `src/hooks/useLiveGameScores.js`
@@ -709,13 +729,20 @@ const SYSTEM_IDS = new Set(['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB'])
 const realPlays = plays.filter(p => !SYSTEM_IDS.has(p.batterId))
 ```
 
-### 10.6 Inferencia del `half` desde broadcast
+> ℹ️ **`INNING_MARKER` eliminado (abril 2026):** La planilla ya no genera jugadas fantasma `INNING_MARKER`. En su lugar, el campo `currentInning` del payload `GameBroadcast` indica la entrada activa. El filtro se mantiene por compatibilidad con datos persisted antiguos.
 
-El broadcast no incluye `half` (top/bottom). Se infiere comparando el `team_id` del bateador con `home_team_id` del partido:
+### 10.6 Determinación del `half` (top/bottom)
+
+El broadcast ahora incluye `half` ('T' o 'B') en cada jugada. Se usa directamente cuando está presente, con fallback a inferencia por equipo del bateador:
 ```javascript
+// L1: usar play.half directamente (incluido por la planilla)
+if (p.half) return p.half
+// L2: inferir desde team_id del bateador
 half = Number(playerInfo.team_id) === Number(detail.home_team_id) ? 'B' : 'T'
 ```
 **Importante:** usar `Number()` para comparar — los IDs pueden llegar como `string` o `number` según la fuente.
+
+Además, el broadcast incluye `homePlayerIds` y `visitorPlayerIds` para clasificar bateadores directamente sin consultar la DB.
 
 ### 10.7 Indicadores en la UI
 
@@ -923,4 +950,4 @@ https://api.dicebear.com/9.x/avataaars/svg?seed={player_id}&backgroundColor=b6e3
 
 ---
 
-*Documentación generada — Softball Statics Web APS — Abril 2026*
+*Documentación generada — Softball Statics Web APS — Abril 2026 (actualizada 02/04/2026: currentAtBat en tiempo real, eliminación INNING_MARKER, campo currentInning, half en plays, playerIds en payload)*

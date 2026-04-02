@@ -51,11 +51,23 @@ interface GameBroadcast {
     visitorTeamId: string;      // ID numérico del equipo visitante (string)
     plays: Play[];              // ⭐ ARRAY COMPLETO de jugadas hasta este momento
     innings: number;            // Innings programados (usualmente 7)
+    currentInning?: number;     // Entrada activa actual (calculada por la planilla)
     timestamp: number;          // Unix ms del momento del envío
+    homePlayerIds?: string[];   // IDs de todos los jugadores del equipo local (incluyendo sustitutos)
+    visitorPlayerIds?: string[];// IDs de todos los jugadores del equipo visitante (incluyendo sustitutos)
+    currentAtBat?: {            // Turno al bate en curso (null si no hay bateador activo)
+        batterId: string;       // ID del bateador actual
+        batterName: string;     // Nombre del bateador actual
+        inning: number;         // Entrada en la que está bateando
+        balls: number;          // Bolas en el conteo actual (0-3)
+        strikes: number;        // Strikes en el conteo actual (0-2)
+    } | null;
 }
 ```
 
 > ⚠️ **`plays[]` es COMPLETO, no incremental.** Al recibir un evento, reemplazar el array completo. No hacer push ni merge.
+
+> 📡 **`currentAtBat` se actualiza en cada bola, strike o foul.** No necesita que se complete un turno para actualizarse. Se convierte en `null` cuando el turno se completa (la jugada se agrega a `plays[]`).
 
 ---
 
@@ -65,6 +77,7 @@ interface GameBroadcast {
 interface Play {
     id: string;            // ID único de la jugada (UUID o random string)
     inning: number;        // Número de entrada (1-based, ej: 1, 2, 3...)
+    half?: 'T' | 'B';     // Top (visitante batea) o Bottom (local batea)
     batterId: string;      // ID del jugador al bate (string numérico del DB)
     type: PlayType;        // Código de jugada (ver tabla abajo)
     result: string;        // Descripción corta (ej: "HR", "F8", "6-3")
@@ -108,7 +121,6 @@ Estas jugadas **no son turnos al bate reales**. Deben filtrarse antes de mostrar
 
 | `batterId` | `type` | Significado |
 |-----------|--------|-------------|
-| `"INNING_MARKER"` | `DEC` | Inicio de nueva entrada |
 | `"DEF_SWAP"` | `DEC` | Cambio de posición defensiva |
 | `"DEF_SUB"` | `DEC` | Sustitución de jugador |
 
@@ -117,7 +129,9 @@ const SYSTEM_IDS = new Set(['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']);
 const realPlays = plays.filter(p => !SYSTEM_IDS.has(p.batterId));
 ```
 
-El campo `result` de estas jugadas tiene texto descriptivo legible (ej: `"INICIO INNING 3"`, `"SUSTITUCIÓN: Entra García por López (SS)"`). Se puede mostrar en un log secundario si se desea.
+> ℹ️ **`INNING_MARKER` eliminado (abril 2026):** La planilla ya no genera jugadas fantasma `INNING_MARKER` para señalar cambios de entrada. En su lugar, el campo `currentInning` del payload indica la entrada activa. El filtro `INNING_MARKER` se mantiene en el Set por compatibilidad con datos persisted antiguos, pero el broadcast ya no lo incluye.
+
+El campo `result` de las jugadas `DEF_SWAP`/`DEF_SUB` tiene texto descriptivo legible (ej: `"SUSTITUCIÓN: Entra García por López (SS)"`). Se puede mostrar en un log secundario si se desea.
 
 ---
 
@@ -135,7 +149,17 @@ interface GameBroadcast {
     visitorTeamId: string;
     plays: Play[];
     innings: number;
+    currentInning?: number;
     timestamp: number;
+    homePlayerIds?: string[];
+    visitorPlayerIds?: string[];
+    currentAtBat?: {
+        batterId: string;
+        batterName: string;
+        inning: number;
+        balls: number;
+        strikes: number;
+    } | null;
 }
 
 function subscribeToMatch(
@@ -178,6 +202,7 @@ async function initLiveView(matchId: number) {
                 visitorTeamName: broadcast.visitorTeamName,
                 plays: broadcast.plays,    // reemplazar todo
                 innings: broadcast.innings,
+                currentInning: broadcast.currentInning, // entrada activa
                 lastUpdate: new Date(broadcast.timestamp),
             });
         },
@@ -198,7 +223,7 @@ El broadcast **no incluye el score precalculado**. La web debe calcularlo desde 
 
 ### Identificar qué jugador pertenece a qué equipo
 
-El broadcast incluye `homeTeamId` y `visitorTeamId`. Los lineups se obtienen desde la DB (`game_player` join `player`). La planillera también los tiene en el broadcast indirectamente a través del `batterId` — correlacionando con los IDs de los jugadores del lineup.
+El broadcast incluye `homeTeamId`, `visitorTeamId`, `homePlayerIds` y `visitorPlayerIds`. Los arrays de IDs permiten clasificar directamente cada `batterId` como local o visitante sin necesidad de consultar la DB. Para nombres de jugadores, se obtiene el lineup desde la DB (`game_player` join `player`) una vez al cargar la vista.
 
 ### Calcular carreras de un equipo
 
@@ -486,10 +511,14 @@ El patrón es **DELETE + INSERT** completo en cada save — los datos siempre so
 - [ ] Suscribirse con `subscribeToMatch(matchId, onUpdate)`
 - [ ] Al recibir broadcast: **reemplazar** `plays[]` completo (no push)
 - [ ] Calcular score, outs y log desde `plays[]` localmente
-- [ ] Filtrar `batterId` en `['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']` para el feed público
+- [ ] Filtrar `batterId` en `['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']` para el feed público (INNING_MARKER ya no se emite pero se filtra por seguridad)
+- [ ] Usar `broadcast.currentInning` para la entrada activa (no derivar de `Math.max(plays.inning)`)
+- [ ] Usar `broadcast.homePlayerIds` / `visitorPlayerIds` para clasificar bateadores por equipo
+- [ ] Usar `play.half` ('T'/'B') incluido en cada jugada para determinar top/bottom
+- [ ] Usar `broadcast.currentAtBat` para mostrar el bateador actual con conteo de bolas/strikes en tiempo real
 - [ ] Limpiar suscripción con `unsubscribe()` al desmontar el componente
 
 ---
 
-*Última actualización: 01/04/2026 — Versión post-fix heartbeat + onReady broadcaster*
+*Última actualización: 02/04/2026 — currentAtBat en tiempo real, eliminación de INNING_MARKER, campo currentInning, half en plays, playerIds en payload*
 
