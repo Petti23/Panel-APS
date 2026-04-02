@@ -17,6 +17,11 @@ npm-debug.log*
 # Editor
 .vscode/
 .idea/
+
+# Obsidian — ignorar estado local, mantener config del vault
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
 *.suo
 *.ntvs*
 *.njsproj
