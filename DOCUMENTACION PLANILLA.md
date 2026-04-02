@@ -1,960 +1,206 @@
-# Softball Statics — Documentación Arquitectural Completa
+# Softball Statics — Integración en Tiempo Real para Web-APS
 
-> **Versión:** 2026  
-> **Propósito:** Guía completa para agentes y desarrolladores que integren o extiendan este sistema. Cubre arquitectura, flujo de datos, contratos de API, estado local y protocolo en tiempo real.
-
----
-
-## Índice
-
-1. [Visión General del Sistema](#1-visión-general-del-sistema)
-2. [Stack Tecnológico](#2-stack-tecnológico)
-3. [Estructura de Carpetas](#3-estructura-de-carpetas)
-4. [Tipos de Datos Centrales](#4-tipos-de-datos-centrales)
-5. [Arquitectura de Capas](#5-arquitectura-de-capas)
-6. [Flujo de Datos Completo](#6-flujo-de-datos-completo)
-7. [Capa de Persistencia — Supabase](#7-capa-de-persistencia--supabase)
-8. [Estado del Cliente (localStorage)](#8-estado-del-cliente--localstorage)
-9. [Tiempo Real — Broadcast Protocol](#9-tiempo-real--broadcast-protocol)
-10. [API de Servicio (`src/services/api.ts`)](#10-api-de-servicio-srcservicesapits)
-11. [Lógica de Juego (`src/utils/gameLogic.ts`)](#11-lógica-de-juego-srcutilsgamelogicts)
-12. [Cálculo de Estadísticas (`src/utils/statsCalculator.ts`)](#12-cálculo-de-estadísticas-srcutilsstatscalculatorts)
-13. [Auto-Save y Cola de Sincronización](#13-auto-save-y-cola-de-sincronización)
-14. [Navegación y Rutas](#14-navegación-y-rutas)
-15. [Componentes Clave](#15-componentes-clave)
-16. [Reglas de Seguridad](#16-reglas-de-seguridad)
-17. [Guía de Integración para Sistemas Externos](#17-guía-de-integración-para-sistemas-externos)
-18. [Diagramas de Flujo](#18-diagramas-de-flujo)
+> **Destinatario:** Agente de Web-APS  
+> **Propósito:** Guía completa para implementar la vista en tiempo real del partido — marcador, lineup y log de jugadas — usando el canal Supabase Broadcast emitido por la app de planilla.
 
 ---
 
-## 1. Visión General del Sistema
+## 1. Visión General
 
-Softball Statics es una **aplicación de planilla deportiva en tiempo real** para partidos de softball. Funciona como la **fuente autoritativa de datos** durante un partido:
+La app de planilla emite el estado **completo** del partido cada vez que ocurre una jugada, y también periódicamente cada 8 segundos (heartbeat). La web solo necesita:
+
+1. Llamar a la DB para obtener el estado inicial (en caso de que el usuario entre en medio del partido).
+2. Suscribirse al canal Broadcast.
+3. Reemplazar su estado local con cada payload recibido.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  PLANILLERO  (esta app)                                         │
-│  ┌──────────┐   ┌──────────────┐   ┌───────────────────────┐   │
-│  │ GameView │──▶│ useAutoSave  │──▶│ Supabase DB           │   │
-│  │          │   └──────────────┘   │  game / game_player   │   │
-│  │  Registra│   ┌──────────────┐   │  plate_appearance     │   │
-│  │  jugadas │──▶│  Broadcaster │──▶│  play / runner_advance│   │
-│  └──────────┘   │  (Broadcast) │   └───────────────────────┘   │
-│                 └──────────────┘           ▲                    │
-└─────────────────────────────────────────────│───────────────────┘
-                                             │ REST / RPC
-        ┌────────────────────────────────────┴────────────────────┐
-        │  CONSUMIDORES EXTERNOS                                  │
-        │                                                         │
-        │  Página de Resultados  ──── Broadcast Channel ──────▶  │
-        │  App de Estadísticas   ──── Supabase REST   ────────▶  │
-        │  Sitio Público         ──── Materialized Views ──────▶  │
-        └─────────────────────────────────────────────────────────┘
-```
-
-**Principios clave:**
-- Las jugadas se guardan en `localStorage` inmediatamente (sin pérdida ante desconexión).
-- Cada 10 segundos (o en eventos clave) se sincronizan con Supabase.
-- Cada jugada emite un broadcast al canal `match-live-{matchId}` con el estado **completo** del partido.
-- Los consumidores externos deben **REEMPLAZAR** su estado local con el payload del broadcast, no hacer merge parcial.
-
----
-
-## 2. Stack Tecnológico
-
-| Capa | Tecnología | Versión |
-|------|-----------|---------|
-| Frontend | React | 19 |
-| Lenguaje | TypeScript | 5.9 |
-| Bundler | Vite | 7 |
-| Estilos | TailwindCSS | 3 |
-| Base de datos | Supabase (PostgreSQL) | — |
-| Iconos | lucide-react | — |
-| Testing | Vitest | — |
-
----
-
-## 3. Estructura de Carpetas
-
-```
-src/
-├── App.tsx                    # Raíz: navegación y estado de alto nivel
-├── main.tsx                   # Entry point React
-├── types.ts                   # ⭐ Tipos centrales del dominio
-├── constants.ts               # Constantes globales
-│
-├── components/
-│   ├── common/
-│   │   ├── ErrorBoundary.tsx  # Recuperación de errores de componentes
-│   │   ├── SaveIndicator.tsx  # Indicador visual de auto-save
-│   │   └── SessionRecoveryModal.tsx # Modal para recuperar sesión
-│   ├── game/
-│   │   ├── GameView.tsx       # ⭐ Orquestador principal del partido
-│   │   ├── GameLayout.tsx     # Layout: planilla doble (local + visitante)
-│   │   ├── GameplayActions.tsx # Botones de acción (Ball, Strike, etc.)
-│   │   ├── ActionModal.tsx    # Modal de registro de jugada
-│   │   ├── Scorecard.tsx      # Grilla por entrada de un equipo
-│   │   ├── Scoreboard.tsx     # Marcador visual
-│   │   ├── InningCell.tsx     # Celda individual de la grilla
-│   │   ├── PlayerRow.tsx      # Fila del jugador en la grilla
-│   │   ├── FieldDisplay.tsx   # Visualización del diamante
-│   │   ├── FieldPlayerModal.tsx # Modal al clickear jugador en campo
-│   │   ├── LiveMatchView.tsx  # ⭐ Vista para espectadores en tiempo real
-│   │   ├── AddSubModal.tsx    # Modal de sustitución
-│   │   ├── DefensiveSwapModal.tsx # Modal de cambio defensivo
-│   │   └── TeamNameModal.tsx  # Modal para editar nombre del equipo
-│   ├── lineup/
-│   │   ├── LineupSetup.tsx    # Configuración del lineup antes del partido
-│   │   └── PlayerEditModal.tsx # Modal de edición de jugador en el lineup
-│   ├── team/
-│   │   └── TeamManager.tsx    # Gestión de equipos y jugadores
-│   └── tournament/
-│       ├── Home.tsx           # Pantalla de inicio
-│       ├── TournamentView.tsx # Vista de partidos del torneo
-│       ├── CreateMatch.tsx    # Formulario de creación de partido
-│       ├── SubTournamentSelect.tsx  # Selector de sub-torneo (Paranaense)
-│       └── NacionalTournamentSelect.tsx # Selector de torneo Nacional
-│
-├── hooks/
-│   ├── usePersistedState.ts   # ⭐ useState + localStorage automático
-│   ├── useAutoSave.ts         # ⭐ Auto-save periódico a Supabase
-│   ├── useNavigation.ts       # Navegación SPA sin router
-│   ├── useOnlineStatus.ts     # Detección de conectividad
-│   └── useSessionRecovery.ts  # Recuperación de sesión anterior
-│
-├── services/
-│   ├── api.ts                 # ⭐ Todas las operaciones con Supabase
-│   ├── realtime.ts            # ⭐ Broadcast: emisión y suscripción
-│   ├── cache.ts               # Caché en memoria con TTL
-│   ├── sessionStorage.ts      # Wrapper de localStorage con TTL/versión
-│   ├── syncQueue.ts           # Cola offline para sincronización
-│   └── demoHelper.ts          # Datos de demo
-│
-├── utils/
-│   ├── gameLogic.ts           # ⭐ Lógica de softball (outs, corredores, grilla)
-│   └── statsCalculator.ts     # Cálculo de estadísticas por partido
-│
-├── data/
-│   └── dummy.ts               # Partido dummy para desarrollo/demo
-│
-└── lib/
-    ├── supabase.ts            # Inicialización del cliente Supabase
-    └── database.types.ts      # Tipos generados por Supabase CLI
+Planilla (GameView)
+    │
+    ├─ Al anotar jugada        ──▶  Broadcast inmediato  ──▶  Web-APS
+    ├─ Heartbeat cada 8s       ──▶  Broadcast periódico  ──▶  Web-APS
+    └─ Al conectar canal       ──▶  Broadcast inicial    ──▶  Web-APS
+                                         │
+                         Supabase Realtime Channel
+                         `match-live-{game_id}`
 ```
 
 ---
 
-## 4. Tipos de Datos Centrales
+## 2. Canal Supabase Broadcast
 
-> **Archivo:** `src/types.ts`
+| Parámetro | Valor |
+|-----------|-------|
+| Canal | `match-live-{game_id}` |
+| Evento | `game_update` |
+| Frecuencia | Por cada jugada + heartbeat cada 8s |
+| Dirección | Solo planilla → web (unidireccional) |
 
-### `Position`
-```typescript
-type Position = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 'DH' | 'DP' | 'FLEX' | '';
-```
-Números 1–9 son posiciones defensivas estándar (1=P, 2=C, 3=1B, 4=2B, 5=3B, 6=SS, 7=LF, 8=CF, 9=RF). `DP` y `FLEX` son roles especiales del softball.
-
----
-
-### `Player`
-```typescript
-interface Player {
-    id: string;         // ID numérico como string (del DB) o generado localmente
-    name: string;       // Nombre completo
-    number: string;     // Número de camiseta
-    position: Position; // Posición defensiva
-    subType?: 'starter' | 'sub'; // Titular o sustituto
-    photo?: string;     // URL del avatar (DiceBear)
-}
-```
+`game_id` es el `bigserial` de la tabla `game` en Supabase (número entero, ej: `42`).
 
 ---
 
-### `PlayerEntry`
-```typescript
-interface PlayerEntry {
-    player: Player;
-    entryInning?: number;  // Entrada en que ingresó (undefined = titular)
-    exitInning?: number;   // Entrada en que salió
-}
-```
+## 3. Payload — `GameBroadcast`
 
----
-
-### `LineupSlot`
-```typescript
-interface LineupSlot {
-    id: string;
-    players: PlayerEntry[]; // Historial: titular + sustitutos para esa posición en el orden al bate
-}
-```
-Un `LineupSlot` representa **una posición en el orden al bate**. El array `players` tiene primero al titular y luego los sustitutos que lo reemplazaron. El **último elemento** es el jugador activo actualmente en esa posición.
-
----
-
-### `Team`
-```typescript
-interface Team {
-    id: string;        // ID del equipo (DB numérico como string)
-    name: string;
-    lineup: LineupSlot[];    // Orden al bate (hasta 10 slots con DP/FLEX)
-    substitutes: Player[];   // Jugadores disponibles no en el orden al bate
-}
-```
-
-**Regla de lineup DP/FLEX:**
-- Si hay 10 slots, el slot en posición 10 (índice 9) es el **FLEX** — juega en defensa pero tiene posición fija DP en el orden al bate (índice del DP). El FLEX **no batea** por sí mismo.
-- El último bateador válido es el índice 8 (9vo), no el 9 (FLEX).
-
----
-
-### `PlayType`
-```typescript
-type PlayType =
-    | '1B' | '2B' | '3B' | 'HR' | 'IPHR'   // Hits
-    | 'BB' | 'IBB' | 'HP' | 'HBP'           // On base sin bate
-    | 'K' | 'Ks' | 'Kc'                     // Ponches
-    | 'F' | 'L' | 'G' | 'P' | 'FO'         // Outs en juego
-    | 'E' | 'FC' | 'SAC' | 'SF' | 'DEC';   // Especiales
-```
-
-| Código | Descripción | ¿Cuenta AB? | ¿Cuenta Hit? | ¿Genera Out? |
-|--------|-------------|:-----------:|:------------:|:------------:|
-| `1B` | Sencillo | ✓ | ✓ | ✗ |
-| `2B` | Doble | ✓ | ✓ | ✗ |
-| `3B` | Triple | ✓ | ✓ | ✗ |
-| `HR` | Home Run | ✓ | ✓ | ✗ |
-| `IPHR` | HR interno | ✓ | ✓ | ✗ |
-| `BB` | Base por bolas | ✗ | ✗ | ✗ |
-| `IBB` | Base intencional | ✗ | ✗ | ✗ |
-| `HP` / `HBP` | Hit por lanzamiento | ✗ | ✗ | ✗ |
-| `K` / `Ks` / `Kc` | Ponche | ✓ | ✗ | ✓ |
-| `F` / `FO` | Fly out | ✓ | ✗ | ✓ |
-| `L` | Línea out | ✓ | ✗ | ✓ |
-| `G` | Groundout | ✓ | ✗ | ✓ |
-| `P` | Pop out | ✓ | ✗ | ✓ |
-| `E` | Error | ✓ | ✗ | ✗ |
-| `FC` | Campo del fildeador | ✓ | ✗ | ✗ |
-| `SAC` | Bunt de sacrificio | ✗ | ✗ | ✓ |
-| `SF` | Fly de sacrificio | ✗ | ✗ | ✓ |
-| `DEC` | Marcador interno del sistema | ✗ | ✗ | ✗ |
-
----
-
-### `Play`
-```typescript
-interface Play {
-    id: string;                                     // UUID único
-    inning: number;                                 // Entrada (1-based)
-    batterId: string;                               // ID del bateador (numérico como string)
-    type: PlayType;
-    result: string;                                 // Descripción corta (ej: "F8", "6-3")
-    secondaryResult?: string;                       // Out secundario (ej: doble play)
-    rbi: number;
-    out: boolean;                                   // ¿La jugada generó un out al bateador?
-    bases?: [boolean, boolean, boolean, boolean];  // [1ra, 2da, 3ra, Home] del bateador
-    runnerActions?: { [base: number]: string[] };  // Acciones en bases (ej: SB, WP)
-    runnerAdvances?: Record<string, number>;        // play.id → base final (4=home, 0=out)
-    balls?: number;                                 // Bolas al momento de la jugada
-    strikes?: number;                               // Strikes al momento de la jugada
-}
-```
-
-#### Marcadores internos del sistema
-
-Las siguientes jugadas tienen `batterId` especial y **deben filtrarse** en el feed público:
-
-| `batterId` | Significado |
-|-----------|-------------|
-| `"INNING_MARKER"` | Marcador de fin de entrada (no es turno al bate) |
-| `"DEF_SWAP"` | Cambio defensivo sin sustitución |
-| `"DEF_SUB"` | Sustitución de jugador |
-
----
-
-### `Game`
-```typescript
-interface Game {
-    id: string;
-    date: string;          // YYYY-MM-DD
-    visitorTeam: Team;
-    homeTeam: Team;
-    innings: number;       // Innings programados (usualmente 7)
-    plays: Play[];         // Array plano de todas las jugadas en orden cronológico
-}
-```
-
-> **Importante:** Las jugadas de ambos equipos están en un solo array `plays[]` sin separación por equipo. Para filtrar por equipo hay que hacer join con los `batterId` del lineup.
-
----
-
-### `MatchDetails`
-```typescript
-interface MatchDetails {
-    homeTeam: string;
-    visitorTeam: string;
-    homeTeamId?: number;
-    visitorTeamId?: number;
-    matchId?: number;       // ID de Supabase (null si aún no se persistió)
-    date: string;
-    time: string;
-    field: string;
-    innings?: number;
-    homeLineup?: LineupSlot[];
-    visitorLineup?: LineupSlot[];
-    plays?: Play[];
-}
-```
-
----
-
-## 5. Arquitectura de Capas
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  PRESENTACIÓN (React Components)                               │
-│  App.tsx → Home → TournamentView → GameView → LiveMatchView    │
-├─────────────────────────────────────────────────────────────────┤
-│  ESTADO / HOOKS                                                │
-│  usePersistedState  useAutoSave  useNavigation  useOnlineStatus│
-├─────────────────────────────────────────────────────────────────┤
-│  SERVICIOS                                                     │
-│  api.ts (CRUD Supabase)  │  realtime.ts (Broadcast)           │
-│  cache.ts (memoria)      │  syncQueue.ts (offline queue)       │
-│  sessionStorage.ts (localStorage wrapper)                      │
-├─────────────────────────────────────────────────────────────────┤
-│  UTILIDADES DE DOMINIO                                         │
-│  gameLogic.ts (outs, corredores, columnas de grilla)          │
-│  statsCalculator.ts (AVG, OBP, SLG, OPS por partido)         │
-├─────────────────────────────────────────────────────────────────┤
-│  INFRAESTRUCTURA                                               │
-│  lib/supabase.ts  (cliente JS de Supabase)                    │
-│  types.ts         (contrato de tipos del dominio)             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 6. Flujo de Datos Completo
-
-### 6.1 Crear un partido nuevo
-
-```
-Home
- └─▶ TournamentView (lista partidos del torneo)
-      └─▶ CreateMatch
-           ├─ api.teams.getAll()                  → Supabase: SELECT team
-           ├─ api.players.getByTeam(id, tourId)   → Supabase: JOIN player_team_tournament
-           ├─ api.matches.create(...)              → Supabase: INSERT game (status='draft')
-           └─▶ App.handleStartMatch(matchDetails)
-                ├─ Limpia localStorage (claves softball_game_*)
-                ├─ Si hay lineups, pre-seed localStorage con game_data
-                └─▶ GameView (navigate 'game')
-```
-
-### 6.2 Configurar lineup in-app (LineupSetup)
-
-```
-GameView
- └─▶ [isSetupComplete = false] → LineupSetup
-      ├─ Usuario configura orden al bate y posiciones
-      └─▶ handleLineupConfirmed(homeLineup, visitorLineup, homeSubs, visitorSubs)
-           ├─ setGame(prev => {...prev, homeTeam: {..., lineup, substitutes}})
-           ├─ setIsSetupComplete(true)
-           └─▶ [useEffect] triggerSave() → api.saveMatchFull.execute(...)
-                                           → Supabase: UPSERT game + game_team + game_player
-```
-
-### 6.3 Registrar una jugada
-
-```
-GameView
- ├─ Usuario selecciona celda (inning + bateador) → setSelectedCell(...)
- ├─ Botones de GameplayActions: Ball / Strike / Foul
- │   ├─ Ball: currentBalls++ → si 4 → auto-BB (handleSavePlay('BB', ...))
- │   ├─ Strike: currentStrikes++ → si 3 → modal de ponche
- │   └─ Foul: abre FoulFieldModal
- └─ Abre ActionModal → usuario elige tipo de jugada
-      └─▶ handleSavePlay(type, result, rbi, bases, ...)
-           ├─ Construye objeto Play { id: uuid, inning, batterId, type, ... }
-           ├─ setGame(prev => ({ ...prev, plays: [...prev.plays, newPlay] }))
-           │   └─▶ usePersistedState → localStorage.setItem('softball_game_data', ...)
-           └─▶ broadcaster.send(GameBroadcast)   ← Supabase Realtime Broadcast
-                    {
-                      homeTeamName, visitorTeamName,
-                      homeTeamId, visitorTeamId,
-                      plays: [...TODAS las jugadas],
-                      innings,
-                      timestamp
-                    }
-```
-
-### 6.4 Auto-Save (cada 10 segundos)
-
-```
-useAutoSave (intervalo)
- ├─ ¿Hay cambios? (JSON.stringify !== lastSavedMark)
- ├─ ¿Online?
- │   ├─ Sí → api.saveMatchFull.execute(matchData, homeLineup, visitorLineup, plays)
- │   │        └─▶ Supabase: UPSERT game → DELETE+INSERT game_player, game_team,
- │   │                                     plate_appearance, play, runner_advance
- │   └─ No → syncQueue.enqueue('saveMatchFull', payload)
- │            └─ localStorage['softball_sync_queue']
- │            └─▶ Al reconectar (online event) → syncQueue.processQueue()
- └─ setLastSavedMark(dataString)
-```
-
-### 6.5 Reanudar un partido existente
-
-```
-TournamentView → "Reanudar" (matchId)
- └─▶ App.handleResumeMatch(matchId)
-      ├─ api.matches.getFull(matchId)
-      │   ├─ SELECT game (match info)
-      │   ├─ SELECT game_player JOIN player (lineups)
-      │   └─ SELECT plate_appearance JOIN play JOIN runner_advance (jugadas)
-      ├─ Fallback: si DB no tiene lineup → usar localStorage cachedGame
-      ├─ Fallback: si DB no tiene plays → usar localStorage localPlays
-      ├─ Pre-seed localStorage con game_data (Game completo)
-      └─▶ GameView (navigate 'game', resumeKey=Date.now())
-```
-
----
-
-## 7. Capa de Persistencia — Supabase
-
-### 7.1 Tablas relevantes para la planilla
-
-| Tabla | Descripción | Columnas clave |
-|-------|-------------|----------------|
-| `tournament` | Torneos | `tournament_id`, `name`, `season` |
-| `team` | Equipos | `team_id`, `name` |
-| `player` | Jugadores | `player_id`, `first_name`, `last_name` |
-| `team_tournament` | Equipos en torneo | `(tournament_id, team_id)` |
-| `player_team_tournament` | Roster por torneo | `(tournament_id, team_id, player_id)`, `jersey_number` |
-| `game` | Partido | `game_id`, `home_team_id`, `away_team_id`, `status`, `scheduled_innings` |
-| `game_team` | Equipos en partido | `(game_id, team_id)`, `is_home` |
-| `game_player` | Lineup del partido | `(game_id, player_id)`, `batting_order`, `lineup_role`, `defensive_position`, `is_starter` |
-| `plate_appearance` | Turno al bate | `pa_index`, `inning`, `half`, `batter_id`, `outs_start` |
-| `play` | Resultado del turno | `play_type`, `rbi`, `outs_on_play`, `bases_hit` |
-| `runner_advance` | Avances de corredores | `runner_id`, `from_base`, `to_base`, `run_scored` |
-
-### 7.2 Mapeo PlayType app → DB
-
-| App (`PlayType`) | DB (`play_type` enum) |
-|-----------------|----------------------|
-| `1B` | `SINGLE` |
-| `2B` | `DOUBLE` |
-| `3B` | `TRIPLE` |
-| `HR`, `IPHR` | `HOME_RUN` |
-| `BB` | `WALK` |
-| `IBB` | `INTENTIONAL_WALK` |
-| `HP`, `HBP` | `HIT_BY_PITCH` |
-| `K`, `Ks`, `Kc` | `STRIKEOUT` |
-| `F`, `FO` | `FLYOUT` |
-| `L` | `LINEOUT` |
-| `G` | `GROUNDOUT` |
-| `P` | `POPOUT` |
-| `E` | `REACH_ON_ERROR` |
-| `FC` | `FIELDERS_CHOICE` |
-| `SAC` | `SAC_BUNT` |
-| `SF` | `SAC_FLY` |
-| `DEC` | `UNKNOWN` |
-
-**Archivo:** `src/services/api.ts` → `PLAY_TYPE_MAP`
-
-### 7.3 Ciclo de vida del partido (`game.status`)
-
-```
-draft ──▶ in_progress ──▶ submitted ──▶ closed
-  │                                        │
-  │ (creado, sin lineup)    (stats disponibles en Materialized Views)
-  │
-  └─▶ [saveMatchFull lo marca in_progress al guardar]
-```
-
-### 7.4 `saveMatchFull` — Operación completa de guardado
-
-La función `api.saveMatchFull.execute(matchData, homeLineup, visitorLineup, plays)` realiza en orden:
-
-1. **Obtiene** el `tournament_id` por nombre del torneo.
-2. **UPSERT** en `game` (actualiza si `matchId` existe, crea si no).
-3. **DELETE** en `game_player`, `game_team`, `plate_appearance` (cascada a `play` y `runner_advance`) — para re-sincronización limpia.
-4. **INSERT batch** en `game_team` (2 filas: home + away).
-5. **INSERT batch** en `game_player` (todos los jugadores del lineup, titulares + suplentes).
-6. **INSERT batch** en `plate_appearance` (todas las jugadas como PAs).
-7. Para cada PA: **INSERT** en `play` y **INSERT** en `runner_advance` si hubo carreras.
-
-> ⚠️ **El guardado es destructivo (DELETE + INSERT)**: cada save reinicia los datos del partido en la DB. Esto garantiza consistencia pero significa que la DB puede quedar momentáneamente sin datos entre el DELETE y el INSERT batch.
-
-### 7.5 `getFull` — Lectura completa del partido
-
-`api.matches.getFull(matchId)` retorna:
-
-```typescript
-{
-    match: {
-        id: number;
-        home_team_id: number;
-        visitor_team_id: number;
-        home_team_name: string;
-        visitor_team_name: string;
-        match_date: string;         // YYYY-MM-DD
-        match_time: string;         // HH:MM
-        field: string | null;
-        estado: string;             // game_status
-        innings_programados: number;
-    };
-    homeLineup: LineupSlot[];
-    visitorLineup: LineupSlot[];
-    plays: Play[];
-}
-```
-
-> Las jugadas recuperadas desde DB son **reconstruidas** con información parcial (no incluyen `runnerAdvances` detallados, solo `bases` y `out`). Son funcionales para la vista pero menos granulares que el estado en tiempo real del broadcast.
-
----
-
-## 8. Estado del Cliente — localStorage
-
-### 8.1 Claves usadas
-
-Todas las claves tienen el prefijo `softball_`:
-
-| Clave | Tipo | TTL | Descripción |
-|-------|------|-----|-------------|
-| `softball_game_data` | `Game` | 24h | Estado completo del partido activo |
-| `softball_game_activeTeam` | `'home' \| 'visitor'` | 24h | Equipo activo en la grilla |
-| `softball_game_isSetupComplete` | `boolean` | 24h | ¿El lineup fue confirmado? |
-| `softball_game_isModalOpen` | `boolean` | 24h | Estado del modal de jugada |
-| `softball_game_selectedCell` | `{ inning, batterId, batterName, playId?, pass? } \| null` | 24h | Celda seleccionada |
-| `softball_game_currentBalls` | `number` | 24h | Bolas del conteo actual |
-| `softball_game_currentStrikes` | `number` | 24h | Strikes del conteo actual |
-| `softball_game_matchStartTime` | `number` | 24h | Timestamp de inicio |
-| `softball_app_matchDetails` | `MatchDetails \| null` | 24h | Detalles del partido actual |
-| `softball_app_resumeKey` | `number` | 24h | Key para remount de GameView |
-| `softball_sync_queue` | `SyncOperation[]` | N/A | Cola de operaciones offline |
-
-### 8.2 Wrapper `sessionStorageManager`
-
-**Archivo:** `src/services/sessionStorage.ts`
-
-```typescript
-sessionStorageManager.set(key, value)    // Guarda con timestamp y versión
-sessionStorageManager.get(key, default)  // Lee; retorna default si expirado/versión diferente
-sessionStorageManager.remove(key)        // Elimina
-sessionStorageManager.clearAllSoftballData()  // Limpia todo
-sessionStorageManager.clearExpiredData() // Limpia expirados (al QuotaExceeded)
-```
-
-**Formato interno:**
-```typescript
-{
-    value: T,
-    timestamp: number,  // Unix ms
-    version: 1          // CURRENT_VERSION — si difiere, el dato se descarta
-}
-```
-
-### 8.3 `usePersistedState`
-
-```typescript
-const [state, setState] = usePersistedState<T>('clave', defaultValue);
-```
-
-Funciona exactamente como `useState` pero sincroniza automáticamente con `localStorage`. **Cada cambio de estado escribe a localStorage en el mismo render cycle** (via `useEffect`).
-
----
-
-## 9. Tiempo Real — Broadcast Protocol
-
-### 9.1 Canal
-
-```
-match-live-{matchId}
-```
-
-Donde `matchId` es el `game_id` numérico de Supabase.
-
-### 9.2 Evento
-
-```
-game_update
-```
-
-### 9.3 Payload (`GameBroadcast`)
+Cada mensaje tiene esta estructura. **Siempre contiene el estado completo**, no diferencial.
 
 ```typescript
 interface GameBroadcast {
-    homeTeamName: string;       // Nombre del equipo local
+    homeTeamName: string;       // Nombre del equipo local (puede cambiar durante el partido)
     visitorTeamName: string;    // Nombre del equipo visitante
-    homeTeamId: string;         // ID numérico como string del equipo local
-    visitorTeamId: string;      // ID numérico como string del equipo visitante
-    plays: Play[];              // ⭐ ARRAY COMPLETO de jugadas (no incremental)
-    innings: number;            // Innings programados
-    timestamp: number;          // Unix ms
+    homeTeamId: string;         // ID numérico del equipo local (string)
+    visitorTeamId: string;      // ID numérico del equipo visitante (string)
+    plays: Play[];              // ⭐ ARRAY COMPLETO de jugadas hasta este momento
+    innings: number;            // Innings programados (usualmente 7)
+    timestamp: number;          // Unix ms del momento del envío
 }
 ```
 
-> **Crítico:** `plays[]` contiene **todas** las jugadas del partido hasta ese momento. El consumidor debe **reemplazar** su estado completo, no hacer merge.
+> ⚠️ **`plays[]` es COMPLETO, no incremental.** Al recibir un evento, reemplazar el array completo. No hacer push ni merge.
 
-### 9.4 Debounce
+---
 
-El broadcaster aplica un debounce de **150ms** antes de enviar. Esto significa que si se registran múltiples acciones muy rápido (ej: conteo de bolas), solo se emite el último estado.
-
-### 9.5 Suscripción — Lado del espectador
+## 4. Estructura de cada jugada (`Play`)
 
 ```typescript
-import { subscribeToMatch } from './services/realtime';
-
-const unsubscribe = subscribeToMatch(
-    matchId,
-    (broadcast: GameBroadcast) => {
-        // Reemplazar estado completo
-        setPlays(broadcast.plays);
-    },
-    (connected: boolean) => {
-        setIsConnected(connected); // 'SUBSCRIBED' → true
-    }
-);
-
-// Al desmontar:
-unsubscribe();
-```
-
-### 9.6 Emisión — Lado del planillero
-
-```typescript
-import { createMatchBroadcaster } from './services/realtime';
-
-const broadcaster = createMatchBroadcaster(matchId);
-
-// Al registrar una jugada:
-broadcaster.send({
-    homeTeamName, visitorTeamName,
-    homeTeamId, visitorTeamId,
-    plays: game.plays,
-    innings: game.innings,
-    timestamp: Date.now()
-});
-
-// Al cerrar el componente:
-broadcaster.destroy();
-```
-
-### 9.7 Patrón de inicialización recomendado
-
-```typescript
-async function initLiveView(matchId: number) {
-    // 1. Estado inicial desde DB (para usuarios que entran en medio del partido)
-    const data = await api.matches.getFull(matchId);
-    setLiveState({ ...data });
-
-    // 2. Suscribirse para actualizaciones en tiempo real
-    const unsubscribe = subscribeToMatch(matchId, (broadcast) => {
-        // 3. Reemplazar estado completo
-        setPlays(broadcast.plays);
-    });
-
-    return unsubscribe; // llamar en cleanup
+interface Play {
+    id: string;            // ID único de la jugada (UUID o random string)
+    inning: number;        // Número de entrada (1-based, ej: 1, 2, 3...)
+    batterId: string;      // ID del jugador al bate (string numérico del DB)
+    type: PlayType;        // Código de jugada (ver tabla abajo)
+    result: string;        // Descripción corta (ej: "HR", "F8", "6-3")
+    secondaryResult?: string;   // Out secundario (ej: doble play)
+    rbi: number;                // Carreras impulsadas
+    out: boolean;               // ¿La jugada generó un out al bateador?
+    bases?: [boolean, boolean, boolean, boolean]; // [1ra, 2da, 3ra, Home]
+    runnerActions?: { [base: number]: string[] }; // acciones en bases (SB, WP, etc.)
+    runnerAdvances?: Record<string, number>;       // play.id → base final (4=home, 0=out)
+    balls?: number;    // Bolas del conteo
+    strikes?: number;  // Strikes del conteo
 }
 ```
 
----
+### Tabla de `PlayType`
 
-## 10. API de Servicio (`src/services/api.ts`)
+| Código | Significado | ¿Es out? | ¿Es hit? |
+|--------|-------------|:--------:|:--------:|
+| `1B` | Sencillo | ✗ | ✓ |
+| `2B` | Doble | ✗ | ✓ |
+| `3B` | Triple | ✗ | ✓ |
+| `HR` | Home Run | ✗ | ✓ |
+| `IPHR` | Home Run interno | ✗ | ✓ |
+| `BB` | Base por bolas | ✗ | ✗ |
+| `IBB` | Base intencional | ✗ | ✗ |
+| `HP` / `HBP` | Hit por lanzamiento | ✗ | ✗ |
+| `K` / `Ks` / `Kc` | Ponche | ✓ | ✗ |
+| `F` / `FO` | Fly out | ✓ | ✗ |
+| `L` | Línea out | ✓ | ✗ |
+| `G` | Groundout / Rolling | ✓ | ✗ |
+| `P` | Pop out | ✓ | ✗ |
+| `E` | Error | ✗ | ✗ |
+| `FC` | Campo del fildeador | ✗ | ✗ |
+| `SAC` | Bunt de sacrificio | ✓ | ✗ |
+| `SF` | Fly de sacrificio | ✓ | ✗ |
+| `DEC` | Marcador interno del sistema | — | — |
 
-### 10.1 Caché en memoria
+### Jugadas del sistema — filtrar en el feed público
 
-```typescript
-import { apiCache, CACHE_TTL } from './cache';
+Estas jugadas **no son turnos al bate reales**. Deben filtrarse antes de mostrarlas:
 
-// TTLs:
-CACHE_TTL.TEAMS       = 5 minutos
-CACHE_TTL.PLAYERS     = 5 minutos
-CACHE_TTL.TOURNAMENTS = 5 minutos
-CACHE_TTL.MATCHES     = 1 minuto
-```
-
-El caché se invalida automáticamente en cada operación de escritura (create, update, delete).
-
-### 10.2 Validación de entradas
-
-Toda entrada a la DB pasa por:
-- `sanitizeText(input, maxLength)` — trim + truncado a maxLength (default 255)
-- `validateId(id)` — valida que sea entero positivo; lanza error si no
-
-### 10.3 Métodos disponibles
-
-#### `api.teams`
-| Método | Descripción | Tablas |
-|--------|-------------|--------|
-| `getAll()` | Lista todos los equipos | `team` |
-| `getById(id)` | Equipo por ID | `team` |
-| `create({ name })` | Crea equipo | `team` |
-
-#### `api.players`
-| Método | Descripción | Tablas |
-|--------|-------------|--------|
-| `getByTeam(teamId, tournamentId?)` | Jugadores del equipo (filtro torneo opcional) | `player_team_tournament JOIN player` |
-| `create({ team_id, name, number }, tournamentId)` | Crea jugador y lo registra en el torneo | `player`, `team_tournament` (upsert), `player_team_tournament` |
-| `delete(id, tournamentId?)` | Elimina del roster y opcionalmente del DB | `player_team_tournament`, `player` |
-| `update(id, { name?, number? })` | Actualiza nombre o número | `player` |
-
-#### `api.tournaments`
-| Método | Descripción | Tablas |
-|--------|-------------|--------|
-| `getAll()` | Lista torneos | `tournament` |
-| `getByName(name)` | Busca por nombre exacto | `tournament` |
-| `getByCompetition(comp)` | Lista torneos (sin filtro real) | `tournament` |
-| `create({ name })` | Crea torneo (año=current, cat='Primera') | `tournament` |
-| `delete(id)` | Elimina torneo | `tournament` |
-
-#### `api.matches`
-| Método | Descripción | Tablas |
-|--------|-------------|--------|
-| `getByTournament(tournamentId)` | Partidos del torneo | `game JOIN team` |
-| `create({ tournament_id, home_team_id, visitor_team_id, ... })` | Crea partido | `game` |
-| `delete(id)` | Elimina partido | `game` |
-| `updateStatus(id, status)` | Actualiza estado | `game` |
-| `getFull(matchId)` | Estado completo del partido | `game`, `game_player`, `plate_appearance`, `play`, `runner_advance` |
-
-#### `api.saveMatchFull`
-| Método | Descripción |
-|--------|-------------|
-| `execute(matchData, homeLineup, visitorLineup, plays)` | Guardado completo: UPSERT game + DELETE+INSERT lineup y jugadas |
-
-Retorna el `matchId` (numérico) del partido guardado.
-
----
-
-## 11. Lógica de Juego (`src/utils/gameLogic.ts`)
-
-### `calculateOuts(plays: Play[]): number`
-Cuenta los outs en un array de jugadas. Considera `out` del bateador + `secondaryResult` (ej: doble play).
-
-### `getRunnersOnBase(plays: Play[]): Play[]`
-Retorna las jugadas activas cuyos bateadores están actualmente en base. Descuenta:
-- Bateadores que anotaron (`bases[3] === true`)
-- Corredores que fueron out o anotaron via `runnerAdvances`
-- Fallback legacy: `secondaryResult` para outs secundarios
-
-### `getRunnerPositions(runners: Play[], plays: Play[]): Record<string, number>`
-Retorna la base actual (1/2/3/4) de cada corredor activo (identificado por `play.id`).
-- 1 = primera base
-- 2 = segunda base
-- 3 = tercera base
-- 4 = home (carrera)
-- 0 = out
-
-### `calculateTeamGridColumns(game: Game, team: Team): GridColumn[]`
-Calcula las columnas de la grilla scorecard. Para cada entrada, determina cuántas "vueltas" al orden al bate hubo, y agrega columnas vacías anticipadas si la entrada sigue activa. Retorna `GridColumn[]`:
-```typescript
-interface GridColumn {
-    id: string;      // '${inning}-${pass}'
-    inning: number;
-    pass: number;    // Vuelta al orden al bate (0-based)
-    label: string;   // Número de entrada para mostrar
-}
-```
-
-### `isInningEditable(game: Game, teamId: string, inning: number)`
-Determina si una entrada es editable:
-- La entrada del visitante 1 siempre es editable.
-- Las demás entradas requieren que la semientrada anterior tenga 3 outs.
-- Una semientrada con 3 outs ya no es editable.
-
----
-
-## 12. Cálculo de Estadísticas (`src/utils/statsCalculator.ts`)
-
-### `calculateGameStats(game: Game): PlayerGameStats[]`
-
-Genera estadísticas por jugador del partido actual:
+| `batterId` | `type` | Significado |
+|-----------|--------|-------------|
+| `"INNING_MARKER"` | `DEC` | Inicio de nueva entrada |
+| `"DEF_SWAP"` | `DEC` | Cambio de posición defensiva |
+| `"DEF_SUB"` | `DEC` | Sustitución de jugador |
 
 ```typescript
-interface PlayerGameStats {
-    playerId: number;   // ID numérico del DB
-    teamId: number;
-    pa: number;         // Plate Appearances
-    ab: number;         // At Bats (PA - BB - HBP - SF - SAC)
-    h: number;          // Hits
-    doubles: number;
-    triples: number;
-    hr: number;
-    bb: number;         // Walks (BB + IBB)
-    k: number;          // Strikeouts
-    rbi: number;
-    r: number;          // Carreras anotadas
-    sf: number;         // Sacrifice flies
-    sac: number;        // Sacrifice bunts
-    hbp: number;        // Hit by pitch
-    avg: number;        // H/AB
-    obp: number;        // (H+BB+HBP) / (AB+BB+HBP+SF)
-    slg: number;        // Total bases / AB
-    ops: number;        // OBP + SLG
-}
+const SYSTEM_IDS = new Set(['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']);
+const realPlays = plays.filter(p => !SYSTEM_IDS.has(p.batterId));
 ```
 
-**Nota:** Solo incluye jugadores con ID numérico válido (descarta IDs de demo como `"b1"`, `"v1"`).
+El campo `result` de estas jugadas tiene texto descriptivo legible (ej: `"INICIO INNING 3"`, `"SUSTITUCIÓN: Entra García por López (SS)"`). Se puede mostrar en un log secundario si se desea.
 
 ---
 
-## 13. Auto-Save y Cola de Sincronización
-
-### 13.1 `useAutoSave`
-
-```typescript
-const { status, triggerSave } = useAutoSave({
-    data: gamePayload,   // objeto serializable
-    intervalMs: 10000,   // cada 10 segundos
-    enabled: boolean     // solo cuando isSetupComplete
-});
-```
-
-`status`: `'saved' | 'saving' | 'offline' | 'error'`
-
-El hook compara `JSON.stringify(data)` con el último guardado para evitar saves innecesarios.
-
-### 13.2 `syncQueue`
-
-Cuando no hay conexión, las operaciones se encolan en `localStorage['softball_sync_queue']`:
-
-```typescript
-interface SyncOperation {
-    id: string;
-    type: 'saveMatchFull';
-    payload: { matchData, homeLineup, visitorLineup, plays };
-    timestamp: number;
-}
-```
-
-La cola solo mantiene **1 operación** de tipo `saveMatchFull` a la vez (la última reemplaza a la anterior). Al detectar `window.online`, se procesa automáticamente.
-
----
-
-## 14. Navegación y Rutas
-
-La app usa navegación SPA personalizada (sin React Router):
-
-**Archivo:** `src/hooks/useNavigation.ts`
-
-Rutas disponibles:
-
-| Ruta | Componente | Descripción |
-|------|-----------|-------------|
-| `home` | `Home` | Pantalla de inicio |
-| `sub-tournament-select` | `SubTournamentSelect` | Selector de sub-torneo |
-| `nacional-tournament-select` | `NacionalTournamentSelect` | Selector Nacional |
-| `tournament` | `TournamentView` | Lista de partidos del torneo |
-| `create-match` | `CreateMatch` | Formulario de nuevo partido |
-| `game` | `GameView` | Planilla del partido activo |
-| `live-match` | `LiveMatchView` | Vista espectador en tiempo real |
-| `team-manager` | `TeamManager` | Gestión de equipos |
-
-**URL directa al partido en vivo:**
-```
-https://[dominio]/?match={matchId}
-```
-Al detectar `?match=XXX`, la app navega automáticamente a `LiveMatchView`.
-
----
-
-## 15. Componentes Clave
-
-### `GameView`
-**Archivo:** `src/components/game/GameView.tsx`
-
-Orquestador central. Responsabilidades:
-- Mantiene el estado `Game` en `usePersistedState`
-- Gestiona la fase de configuración (`LineupSetup`)
-- Maneja el conteo de bolas/strikes
-- Registra jugadas via `handleSavePlay`
-- Emite broadcasts via `createMatchBroadcaster`
-- Dispara auto-save via `useAutoSave`
-
-**Props:**
-```typescript
-{
-    matchDetails: MatchDetails;
-    tournamentName: string;
-    onBack: () => void;
-}
-```
-
-### `LiveMatchView`
-**Archivo:** `src/components/game/LiveMatchView.tsx`
-
-Vista de espectador. Responsabilidades:
-- Carga estado inicial via `api.matches.getFull(matchId)`
-- Se suscribe al canal de broadcast
-- Muestra marcador por entradas, outs actuales, historial de jugadas recientes
-- Filtra los marcadores internos (`INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`)
-
-**Props:**
-```typescript
-{
-    matchId: number;
-    onBack: () => void;
-}
-```
-
-### `Scorecard`
-Grilla interactiva con filas por jugador y columnas por entrada/vuelta. Cada celda puede contener una jugada registrada o estar vacía (esperando registro).
-
-### `ActionModal`
-Modal de registro de jugada. Tiene dos paneles:
-- `inplay`: jugadas de bola en juego (hits, outs, errores)
-- `quick`: jugadas sin bateo (BB, K, HBP, SAC, SF)
-
----
-
-## 16. Reglas de Seguridad
-
-- **Nunca** commitear `.env` con credenciales reales.
-- Todo texto del usuario pasa por `sanitizeText()` antes de ir a la DB.
-- Todo ID pasa por `validateId()` antes de queries.
-- No usar `select *` — especificar columnas siempre.
-- Claves de Supabase (anon key) van en `.env`, nunca hardcodeadas.
-- Los errores de JS nunca se silencian — mínimo `console.error()`.
-- Los errores se muestran al usuario en español.
-
----
-
-## 17. Guía de Integración para Sistemas Externos
-
-### Caso A: Página de resultados en tiempo real
+## 5. Cómo suscribirse — Código listo para usar
 
 ```typescript
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-async function initLiveView(matchId: number) {
-    // 1. Estado inicial (para quienes entran en medio del partido)
-    const { data: game } = await supabase
-        .from('game')
-        .select('game_id, home_team_id, away_team_id, status, scheduled_innings')
-        .eq('game_id', matchId)
-        .single();
+interface GameBroadcast {
+    homeTeamName: string;
+    visitorTeamName: string;
+    homeTeamId: string;
+    visitorTeamId: string;
+    plays: Play[];
+    innings: number;
+    timestamp: number;
+}
 
-    // 2. Suscripción en tiempo real
+function subscribeToMatch(
+    matchId: number,
+    onUpdate: (data: GameBroadcast) => void,
+    onConnectionChange?: (connected: boolean) => void
+) {
     const channel = supabase
-        .channel(`match-live-${matchId}`)
+        .channel(`match-live-${matchId}`, { config: { broadcast: { ack: false } } })
         .on('broadcast', { event: 'game_update' }, ({ payload }) => {
-            // payload es GameBroadcast
-            const { homeTeamName, visitorTeamName, plays, innings } = payload;
-            // REEMPLAZAR estado local completo
-            updateUI({ homeTeamName, visitorTeamName, plays, innings });
+            onUpdate(payload as GameBroadcast);
         })
-        .subscribe();
+        .subscribe((status) => {
+            onConnectionChange?.(status === 'SUBSCRIBED');
+        });
 
     return () => supabase.removeChannel(channel);
 }
 ```
 
-### Caso B: Calcular carreras desde `plays[]`
+---
+
+## 6. Patrón de inicialización recomendado
+
+```typescript
+async function initLiveView(matchId: number) {
+    // 1. Obtener estado inicial desde DB (para usuarios que entran en medio del partido)
+    //    Esto devuelve el último estado guardado (hasta 10s de retraso respecto al broadcast)
+    const initialData = await fetchMatchFromDB(matchId);
+    setGameState(initialData);
+
+    // 2. Suscribirse al canal en tiempo real
+    //    La planilla enviará el estado completo al conectarse (onReady del broadcaster)
+    const unsubscribe = subscribeToMatch(
+        matchId,
+        (broadcast) => {
+            // SIEMPRE reemplazar el estado completo, nunca hacer merge
+            setGameState({
+                homeTeamName: broadcast.homeTeamName,
+                visitorTeamName: broadcast.visitorTeamName,
+                plays: broadcast.plays,    // reemplazar todo
+                innings: broadcast.innings,
+                lastUpdate: new Date(broadcast.timestamp),
+            });
+        },
+        (connected) => setIsConnected(connected)
+    );
+
+    return unsubscribe; // llamar en cleanup / unmount
+}
+```
+
+> 💡 **Nota importante:** La planilla hace `send()` del estado completo automáticamente al conectar su canal WebSocket. Si la web se conecta mientras hay un partido en curso, recibirá el estado actual en los primeros segundos sin necesidad de polling adicional. El heartbeat de 8s garantiza que en el peor caso el retraso sea ≤ 8 segundos.
+
+---
+
+## 7. Calcular el marcador desde `plays[]`
+
+El broadcast **no incluye el score precalculado**. La web debe calcularlo desde `plays[]`.
+
+### Identificar qué jugador pertenece a qué equipo
+
+El broadcast incluye `homeTeamId` y `visitorTeamId`. Los lineups se obtienen desde la DB (`game_player` join `player`). La planillera también los tiene en el broadcast indirectamente a través del `batterId` — correlacionando con los IDs de los jugadores del lineup.
+
+### Calcular carreras de un equipo
 
 ```typescript
 function getRunsForTeam(plays: Play[], playerIds: Set<string>): number {
@@ -962,9 +208,10 @@ function getRunsForTeam(plays: Play[], playerIds: Set<string>): number {
     plays
         .filter(p => playerIds.has(p.batterId))
         .forEach(p => {
-            // 1. Bateador llegó a home directamente
+            // 1. Bateador llegó a home directamente (HR, o bases[3] = true)
             if (p.bases?.[3] === true) runs++;
-            // 2. Corredores que anotaron via runnerAdvances
+
+            // 2. Corredores que anotaron via runnerAdvances (base === 4 significa home)
             if (p.runnerAdvances) {
                 Object.values(p.runnerAdvances).forEach(base => {
                     if (base === 4) runs++;
@@ -975,10 +222,14 @@ function getRunsForTeam(plays: Play[], playerIds: Set<string>): number {
 }
 ```
 
-### Caso C: Calcular marcador por entradas
+### Calcular carreras por entrada (para el tablero)
 
 ```typescript
-function getRunsByInning(plays: Play[], playerIds: Set<string>, totalInnings: number): number[] {
+function getRunsByInning(
+    plays: Play[],
+    playerIds: Set<string>,
+    totalInnings: number
+): number[] {
     return Array.from({ length: totalInnings }, (_, i) => {
         const inning = i + 1;
         return plays
@@ -994,86 +245,251 @@ function getRunsByInning(plays: Play[], playerIds: Set<string>, totalInnings: nu
 }
 ```
 
-### Caso D: Filtrar jugadas válidas para feed público
+### Calcular outs de una entrada
 
 ```typescript
-const SYSTEM_MARKERS = new Set(['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']);
-
-const publicPlays = plays.filter(p => !SYSTEM_MARKERS.has(p.batterId));
+function getOutsForInning(plays: Play[], inning: number, playerIds: Set<string>): number {
+    return plays
+        .filter(p => p.inning === inning && playerIds.has(p.batterId))
+        .reduce((outs, p) => {
+            if (p.out) outs++;
+            if (p.secondaryResult) outs++; // doble play
+            return outs;
+        }, 0);
+}
 ```
 
-### Caso E: Obtener jugados en curso desde la DB
+---
+
+## 8. Construir el log de jugadas
+
+```typescript
+interface PlayLogEntry {
+    inning: number;
+    team: 'home' | 'visitor';
+    playerName: string;
+    type: string;       // código de jugada
+    label: string;      // texto legible en español
+    rbi: number;
+    isSystemEvent: boolean;
+    description: string; // para eventos de sistema (DEF_SWAP, DEF_SUB)
+}
+
+const PLAY_LABELS: Record<string, string> = {
+    '1B': 'Sencillo', '2B': 'Doble', '3B': 'Triple',
+    'HR': 'Home Run', 'IPHR': 'Home Run',
+    'BB': 'Base por Bolas', 'IBB': 'Base Intencional',
+    'HP': 'Hit por Lanzamiento', 'HBP': 'Hit por Lanzamiento',
+    'K': 'Ponche', 'Ks': 'Ponche', 'Kc': 'Ponche Cantado',
+    'F': 'Fly Out', 'FO': 'Fly Out', 'L': 'Línea Out',
+    'G': 'Rolling', 'P': 'Pop Up',
+    'E': 'Error', 'FC': 'Campo del Fildeador',
+    'SAC': 'Sacrificio', 'SF': 'Fly Sacrificio',
+    'DEC': '',
+};
+
+const SYSTEM_IDS = new Set(['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']);
+
+function buildPlayLog(
+    plays: Play[],
+    homePlayerIds: Set<string>,
+    getPlayerName: (id: string) => string
+): PlayLogEntry[] {
+    return plays.map(p => {
+        const isSystem = SYSTEM_IDS.has(p.batterId);
+        return {
+            inning: p.inning,
+            team: homePlayerIds.has(p.batterId) ? 'home' : 'visitor',
+            playerName: isSystem ? '' : getPlayerName(p.batterId),
+            type: p.type,
+            label: PLAY_LABELS[p.type] ?? p.type,
+            rbi: p.rbi,
+            isSystemEvent: isSystem,
+            description: isSystem ? p.result : '',
+        };
+    });
+}
+```
+
+---
+
+## 9. Acceso al lineup desde la DB
+
+El broadcast **no incluye el lineup** directamente. Para mostrar los nombres de los jugadores hay que obtenerlo desde Supabase una vez al cargar la vista:
 
 ```sql
 SELECT
+    gp.team_id,
+    gp.batting_order,
+    gp.defensive_position,
+    gp.is_starter,
+    p.player_id,
+    p.first_name || ' ' || p.last_name AS full_name
+FROM game_player gp
+JOIN player p ON p.player_id = gp.player_id
+WHERE gp.game_id = {matchId}
+ORDER BY gp.team_id, gp.batting_order;
+```
+
+Con este resultado se puede construir un mapa `player_id → nombre` para resolver los `batterId` del broadcast.
+
+---
+
+## 10. Acceso a datos del partido desde la DB
+
+```sql
+-- Info del partido
+SELECT
     g.game_id,
-    th.name AS equipo_local,
-    tv.name AS equipo_visitante,
-    g.scheduled_datetime,
     g.status,
-    g.scheduled_innings
+    g.scheduled_innings,
+    g.scheduled_datetime,
+    g.field,
+    th.name AS home_team,
+    tv.name AS visitor_team
 FROM game g
 JOIN team th ON th.team_id = g.home_team_id
 JOIN team tv ON tv.team_id = g.away_team_id
-WHERE g.status IN ('in_progress', 'submitted')
-ORDER BY g.scheduled_datetime DESC;
+WHERE g.game_id = {matchId};
+```
+
+### Estados del partido (`status`)
+
+| Valor | Significado |
+|-------|-------------|
+| `draft` | Creado, lineup no confirmado aún |
+| `in_progress` | Partido en curso |
+| `submitted` | En revisión |
+| `closed` | Cerrado (stats disponibles) |
+
+### Marcador desde la DB (`game_team`)
+
+La tabla `game_team` tiene los campos `runs` y `hits` actualizados en cada auto-save (cada 10 segundos). Si la web necesita el marcador sin usar el broadcast, puede consultarlos directamente:
+
+```sql
+SELECT
+    gt.team_id,
+    gt.is_home,
+    gt.runs,
+    gt.hits,
+    gt.errors,
+    t.name AS team_name
+FROM game_team gt
+JOIN team t ON t.team_id = gt.team_id
+WHERE gt.game_id = {matchId};
+```
+
+> ⚠️ Estos valores tienen hasta 10s de retraso respecto al broadcast. Para tiempo real, siempre usar el canal Broadcast y calcular el score desde `plays[]`.
+
+### Carreras detalladas por jugada (`play` + `runner_advance`)
+
+```sql
+-- Jugadas con carreras anotadas
+SELECT
+    pa.inning,
+    pa.half,
+    p.play_type,
+    p.runs_on_play,
+    p.rbi
+FROM play p
+JOIN plate_appearance pa ON pa.plate_appearance_id = p.pa_id
+WHERE pa.game_id = {matchId}
+  AND p.runs_on_play > 0
+ORDER BY pa.pa_index;
+
+-- Corredores que anotaron
+SELECT
+    ra.runner_id,
+    pl.first_name || ' ' || pl.last_name AS runner_name,
+    ra.run_scored,
+    ra.is_rbi_credit,
+    ra.reason
+FROM runner_advance ra
+JOIN player pl ON pl.player_id = ra.runner_id
+JOIN plate_appearance pa ON pa.plate_appearance_id = ra.pa_id
+WHERE pa.game_id = {matchId}
+  AND ra.run_scored = true
+ORDER BY pa.pa_index;
 ```
 
 ---
 
-## 18. Diagramas de Flujo
+## 11. URL directa a la vista en vivo
 
-### Flujo de una jugada (Play)
+La app de planilla usa React Router. La URL de espectador es:
 
 ```
-Usuario toca celda → selectedCell = { inning, batterId }
-         │
-         ▼
-Usuario presiona botón (Ball / Strike / Foul / ActionModal)
-         │
-    ┌────┴─────────────────────────────┐
-    │ Ball/Strike/Foul                 │ ActionModal
-    │                                  │
-    ▼                                  ▼
-Count update                  Usuario elige tipo de jugada
-    │                                  │
-    ├─ 4 balls → BB auto               ▼
-    ├─ 3 strikes → KModal        handleSavePlay(type, result, rbi, bases, ...)
-    └─ Foul → FoulField                │
-                                       ▼
-                              Construir Play { id, inning, batterId, type, ... }
-                                       │
-                    ┌──────────────────┴──────────────────┐
-                    │                                      │
-                    ▼                                      ▼
-          setGame(prev => addPlay)             broadcaster.send(GameBroadcast)
-                    │                                      │
-                    ▼                                      ▼
-          localStorage['softball_game_data']    Supabase Broadcast
-                    │                           'match-live-{id}'
-                    │                                      │
-               [cada 10s]                         [espectadores]
-                    │                                      ▼
-                    ▼                          LiveMatchView recibe payload
-          api.saveMatchFull.execute()          → setLiveState (reemplaza plays)
+https://[dominio-planilla]/live/{matchId}
+```
+
+Al abrir esta ruta, la app monta directamente `LiveMatchView` con el partido indicado. Útil para compartir en redes sociales o incrustar en la web.
+
+### Estructura de rutas de la planilla
+
+| Ruta | Pantalla |
+|------|----------|
+| `/` | Selección de torneo |
+| `/paranaense` | Sub-torneos paranaenses |
+| `/nacional` | Sub-torneos nacionales |
+| `/torneo/:name` | Lista de partidos del torneo |
+| `/torneo/:name/nuevo-partido` | Crear partido + confirmar lineup |
+| `/torneo/:name/partido/:matchId` | Planilla activa (GameView) |
+| `/torneo/:name/equipos` | Gestión de equipos |
+| `/live/:matchId` | Vista espectador (LiveMatchView) |
+
+---
+
+## 12. Diagrama de timing
+
+```
+Espectador abre la web
+        │
+        ├─▶ fetchMatchFromDB()          ← Estado de DB (puede tener hasta 10s de retraso)
+        │         │
+        │         └─▶ setGameState(dbData)   ← Estado inicial mostrado
+        │
+        ├─▶ subscribeToMatch()          ← Conecta WebSocket a Supabase
+        │         │
+        │         └─▶ [~1-2s] SUBSCRIBED
+        │                    │
+        │                    └─▶ Planilla detecta nuevo suscriptor y envía estado completo
+        │                                │
+        │                                └─▶ onUpdate(broadcast) → setGameState(broadcast)
+        │
+        └─▶ [heartbeat] cada 8s planilla envía estado completo
                     │
-                    ▼
-          Supabase DB (plate_appearance,
-                        play, runner_advance)
+                    └─▶ Web siempre actualizada con ≤ 8s de latencia máxima
 ```
 
-### Mapa de IDs de jugadores
+### Persistencia en DB (auto-save)
 
-```
-DB (player_id: bigint)
-    └──▶ app (Player.id: string) = player_id.toString()
-              └──▶ Play.batterId = Player.id
-                        └──▶ runnerAdvances keys = Play.id (no player_id)
-```
+La planilla guarda el estado completo en Supabase cada **10 segundos** (o inmediatamente al confirmar el lineup). El save actualiza:
 
-> **Importante:** `runnerAdvances` mapea `play.id → base_final`. Las claves son IDs de jugadas, **no** de jugadores. Para identificar qué jugador es el corredor, correlacionar con `getRunnersOnBase()` que también retorna objetos `Play`.
+| Tabla | Qué se guarda |
+|-------|--------------|
+| `game` | Estado general (`in_progress`), fecha, innings |
+| `game_team` | `runs`, `hits` calculados del estado actual |
+| `game_player` | Lineup completo con `batting_order`, `defensive_position`, `is_starter` |
+| `plate_appearance` | Un registro por turno al bate |
+| `play` | Resultado del turno: `play_type`, `rbi`, `runs_on_play` |
+| `runner_advance` | Un registro por cada corredor que se movió (incluyendo quien anotó) |
+
+El patrón es **DELETE + INSERT** completo en cada save — los datos siempre son el estado actual, no acumulativo.
 
 ---
 
-*Documentación generada el 01/04/2026. Para actualizar, editar este archivo directamente.*
+## 13. Checklist de implementación
+
+- [ ] Instalar `@supabase/supabase-js`
+- [ ] Configurar `SUPABASE_URL` y `SUPABASE_ANON_KEY` en variables de entorno
+- [ ] Al montar la vista: llamar `fetchMatchFromDB(matchId)` para estado inicial
+- [ ] Suscribirse con `subscribeToMatch(matchId, onUpdate)`
+- [ ] Al recibir broadcast: **reemplazar** `plays[]` completo (no push)
+- [ ] Calcular score, outs y log desde `plays[]` localmente
+- [ ] Filtrar `batterId` en `['INNING_MARKER', 'DEF_SWAP', 'DEF_SUB']` para el feed público
+- [ ] Limpiar suscripción con `unsubscribe()` al desmontar el componente
+
+---
+
+*Última actualización: 01/04/2026 — Versión post-fix heartbeat + onReady broadcaster*
 
