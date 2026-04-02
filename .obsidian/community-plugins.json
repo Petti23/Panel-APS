@@ -1,5 +1,3 @@
-{
-  "enabledPlugins": [
-    "obsidian-git"
-  ]
-}
+[
+  "obsidian-git"
+]
