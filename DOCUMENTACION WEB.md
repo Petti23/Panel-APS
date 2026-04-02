@@ -431,6 +431,37 @@ Modal completo de detalle de partido. Se abre al hacer click en una `result-card
 - Usa `useLiveMatch(gameId)` para recibir broadcast en tiempo real
 - Si hay broadcast activo con plays, usa esos datos (tiempo real); si no, usa los plays de la DB
 
+**`displayPlays` — merge inteligente broadcast↔DB:**
+
+Cuando el broadcast está activo, se computa `displayPlays` para decidir qué fuente usar para el PlayByPlay y Linescore:
+
+```javascript
+const displayPlays = (() => {
+  if (broadcastActive && broadcast?.plays && detail) {
+    const converted = broadcastPlaysToDisplay(broadcast.plays, detail)
+    const dbPlays = detail.plays || []
+    if (dbPlays.length >= converted.length) {
+      const dbWithPlay = dbPlays.filter(pa => pa.play)
+      if (converted.length > dbWithPlay.length) return converted  // broadcast más fresco
+      return dbPlays                                               // DB completa
+    }
+    return converted                                               // broadcast tiene más
+  }
+  return detail?.plays || []
+})()
+```
+
+**Lógica de selección:**
+- Si la DB tiene ≥ jugadas que el broadcast Y todas tienen su registro `play` → usa DB (historial completo)
+- Si la DB tiene jugadas sin `play` (PA insertada pero `play` no escrito aún) y el broadcast las tiene → usa broadcast (evita delay)
+- Si el broadcast tiene más jugadas que la DB → usa broadcast (datos más frescos)
+- Sin broadcast activo → siempre DB
+
+> **Bug corregido (abril 2026):** Antes, PlayByPlay y Linescore usaban **solo** `detail.plays` (DB) que depende de `postgres_changes + 1200ms delay`. Al cambiar de entrada, la 1ra PA se insertaba pero su registro `play` no existía aún → `plays.filter(pa => pa.play)` la descartaba → la jugada recién aparecía cuando la 2da PA disparaba otro refresh. Ahora `displayPlays` usa el broadcast como fuente primaria cuando está activo, dando actualización instantánea.
+
+**Cálculo de score del header:**
+El loop de score filtra `SYSTEM_IDS` (`INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) antes de sumar carreras, igual que `useLiveGameScores`.
+
 **3 tabs:**
 | Tab | ID | Contenido |
 |-----|----|-----------|
@@ -439,11 +470,11 @@ Modal completo de detalle de partido. Se abre al hacer click en una `result-card
 | Defensa | `field` | Grid visual del campo con posiciones |
 
 **Sub-componentes internos:**
-- `Linescore` — tabla de carreras por entrada (R/H/E). Los totales R usan `homeRunsDisplay/awayRunsDisplay` calculados desde broadcast si está activo
-- `PlayByPlay` — agrupa jugadas reales (filtra `INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) por `inning + half`
+- `Linescore` — tabla de carreras por entrada (R/H/E). Recibe `displayPlays` y los totales R usan `homeRunsDisplay/awayRunsDisplay` calculados desde broadcast si está activo
+- `PlayByPlay` — recibe `displayPlays`. Agrupa jugadas reales (filtra `INNING_MARKER`, `DEF_SWAP`, `DEF_SUB`) por `inning + half`
 - `LineupTable` — filtra `lineup` por `Number(team_id) === Number(teamId) && is_starter !== false`, ordenado por `batting_order`
 - `DefenseField` — muestra posiciones `P C 1B 2B 3B SS LF CF RF` con avatar y apellido
-- `broadcastPlaysToDisplay(plays, detail)` — convierte play[] del broadcast (códigos like `HR`, `1B`) al formato interno de plate_appearance de la DB usando `BROADCAST_CODE_TO_DB` mapping
+- `broadcastPlaysToDisplay(plays, detail)` — convierte play[] del broadcast (códigos like `HR`, `1B`) al formato interno de plate_appearance de la DB usando `BROADCAST_CODE_TO_DB` mapping. Filtra plays tipo `DEC` (decisiones incompletas sin resultado real) y `SYSTEM_IDS`
 
 **BROADCAST_CODE_TO_DB mapping:**
 ```javascript
