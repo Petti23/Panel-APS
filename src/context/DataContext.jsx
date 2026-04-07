@@ -113,6 +113,7 @@ export const DataProvider = ({ children }) => {
             .catch((err) => {
                 console.error('Error creando equipo:', err)
                 setTeams((prev) => prev.filter((t) => t.id !== tempId))
+                alert(err.message || 'Error creando equipo')
             })
     }
 
@@ -137,6 +138,7 @@ export const DataProvider = ({ children }) => {
         dbUpdateTeam(id, data).catch((err) => {
             console.error('Error actualizando equipo:', err)
             setTeams(snapshot)
+            alert(err.message || 'Error actualizando equipo')
         })
     }
 

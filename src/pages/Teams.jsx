@@ -89,7 +89,7 @@ const Teams = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredTeams.length === 0 ? (
+                        {teams.length === 0 ? (
                             <tr>
                                 <td colSpan="3">
                                     <div className="empty-state" style={{ border: 'none', padding: '3rem' }}>

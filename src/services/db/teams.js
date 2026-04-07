@@ -12,10 +12,10 @@ const fromRow = (row) => ({
 })
 
 const toRow = ({ name, club, city, abbreviation }) => ({
-    name,
-    club: club || null,
+    name: name ? name.toUpperCase() : name,
+    club: club ? club.toUpperCase() : null,
     city: city || null,
-    abbreviation: abbreviation || null,
+    abbreviation: abbreviation ? abbreviation.toUpperCase() : null,
 })
 
 export const fetchTeams = async () => {
@@ -28,6 +28,18 @@ export const fetchTeams = async () => {
 }
 
 export const insertTeam = async (team) => {
+    const uppercaseName = team.name ? team.name.toUpperCase() : team.name;
+
+    const { data: existing } = await supabase
+        .from(TABLE)
+        .select('team_id')
+        .eq('name', uppercaseName)
+        .maybeSingle()
+
+    if (existing) {
+        throw new Error('Ya existe un equipo registrado con ese nombre.')
+    }
+
     const { data, error } = await supabase
         .from(TABLE)
         .insert(toRow(team))
@@ -38,6 +50,19 @@ export const insertTeam = async (team) => {
 }
 
 export const updateTeam = async (id, team) => {
+    const uppercaseName = team.name ? team.name.toUpperCase() : team.name;
+
+    const { data: existing } = await supabase
+        .from(TABLE)
+        .select('team_id')
+        .eq('name', uppercaseName)
+        .neq('team_id', id)
+        .maybeSingle()
+
+    if (existing) {
+        throw new Error('Ya existe otro equipo con este nombre.')
+    }
+
     const { data, error } = await supabase
         .from(TABLE)
         .update(toRow(team))
