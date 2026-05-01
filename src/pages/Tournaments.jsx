@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Plus, SquarePen, Trash2, Trophy, CalendarDays, Users, Calendar, Clock, MapPin } from 'lucide-react'
+import { Plus, SquarePen, Trash2, Trophy, CalendarDays, Users, Calendar, Clock, MapPin, FileSpreadsheet } from 'lucide-react'
 import Modal from '../components/Modal'
 import ExcelUploader from '../components/ExcelUploader'
+import ScheduleExcelUploader from '../components/ScheduleExcelUploader'
 import { useData } from '../context/DataContext'
 import { CATEGORIES } from '../constants/categories'
 import { normalizeText } from '../utils/schedule/normalizeText'
@@ -11,12 +12,13 @@ import '../components/Pages.css'
 const Tournaments = () => {
     const { 
         tournaments, addTournament, updateTournament, deleteTournament, 
-        teams, players, addGame, addTeamToTournament, processRoster, fetchTournamentTeams 
+        teams, players, addGame, addTeamToTournament, processRoster, fetchTournamentTeams, importTournamentSchedule
     } = useData()
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isGameModalOpen, setIsGameModalOpen] = useState(false)
     const [isTeamModalOpen, setIsTeamModalOpen] = useState(false)
     const [isRosterUploadOpen, setIsRosterUploadOpen] = useState(false)
+    const [isScheduleUploadOpen, setIsScheduleUploadOpen] = useState(false)
     
     const [tournamentTeams, setTournamentTeams] = useState([])
     const [isLoadingTeams, setIsLoadingTeams] = useState(false)
@@ -53,7 +55,11 @@ const Tournaments = () => {
         setIsLoadingTeams(true)
         try {
             const tt = await fetchTournamentTeams(tournament.id)
-            setTournamentTeams(tt.map(item => item.team))
+            setTournamentTeams(tt.map(item => ({
+                id: item.team.team_id,
+                name: item.team.name,
+                club: item.team.club
+            })))
         } catch (err) {
             console.error('Error fetching tournament teams:', err)
             setTournamentTeams([])
@@ -115,6 +121,16 @@ const Tournaments = () => {
             handleCloseTeamModal()
         } catch (err) {
             alert('Error al procesar roster: ' + err.message)
+        }
+    }
+
+    const handleScheduleUpload = async (scheduleRows) => {
+        try {
+            const count = await importTournamentSchedule(currentTournament.id, scheduleRows)
+            alert(`Se importaron ${count} partidos correctamente.`)
+            setIsScheduleUploadOpen(false)
+        } catch (err) {
+            alert('Error al importar fixture: ' + err.message)
         }
     }
 
@@ -189,6 +205,7 @@ const Tournaments = () => {
                                     <td style={{ color: 'var(--text-muted)' }}>{formatDate(t.endDate)}</td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
+                                            <button onClick={() => { setCurrentTournament(t); setIsScheduleUploadOpen(true) }} className="btn-icon" title="Subir Fixture (Excel)" style={{ color: 'var(--primary)' }}><FileSpreadsheet size={16} /></button>
                                             <button onClick={() => handleOpenGameModal(t)} className="btn-icon" title="Agregar Partido" style={{ color: 'var(--primary)' }}><CalendarDays size={16} /></button>
                                             <button onClick={() => handleOpenTeamModal(t)} className="btn-icon" title="Agregar Equipos" style={{ color: 'var(--success)' }}><Users size={16} /></button>
                                             <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--border)', margin: '0 4px' }}></div>
@@ -348,6 +365,13 @@ const Tournaments = () => {
                 onClose={() => setIsRosterUploadOpen(false)}
                 team={teams.find(t => t.id === selectedTeamId)}
                 onUpload={handleRosterUpload}
+            />
+
+            <ScheduleExcelUploader 
+                isOpen={isScheduleUploadOpen}
+                onClose={() => setIsScheduleUploadOpen(false)}
+                tournament={currentTournament}
+                onUpload={handleScheduleUpload}
             />
         </div>
     )

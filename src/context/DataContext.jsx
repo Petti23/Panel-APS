@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { supabase } from '../services/supabase'
 import {
     fetchTournaments, insertTournament, updateTournament as dbUpdateTournament,
     deleteTournament as dbDeleteTournament,
@@ -22,6 +23,7 @@ import {
 } from '../services/db/tournamentTeams'
 import { importScheduleToDb } from '../services/db/scheduleImport'
 import { fetchCategories } from '../services/db/categories'
+import { normalizeText } from '../utils/schedule/normalizeText'
 
 const DataContext = createContext()
 
@@ -285,6 +287,82 @@ export const DataProvider = ({ children }) => {
         }
     }
 
+    const importTournamentSchedule = async (tournamentId, scheduleRows) => {
+        try {
+            // 1. Obtener nombres de equipos únicos desde el Excel
+            const teamNamesFromExcel = new Set()
+            scheduleRows.forEach(row => {
+                teamNamesFromExcel.add(row.homeTeam)
+                teamNamesFromExcel.add(row.awayTeam)
+            })
+
+            // 2. Obtener todos los equipos actuales de la DB para comparar localmente
+            const { data: allTeams, error: fetchErr } = await supabase
+                .from('team')
+                .select('team_id, name')
+            if (fetchErr) throw fetchErr
+
+            const teamIdMap = new Map()
+            const existingTeamsMap = new Map(allTeams.map(t => [normalizeText(t.name), t.team_id]))
+
+            for (const name of teamNamesFromExcel) {
+                const normalizedName = normalizeText(name)
+                let teamId = existingTeamsMap.get(normalizedName)
+                
+                if (!teamId) {
+                    // No existe, lo creamos
+                    const { data: inserted, error: insErr } = await supabase
+                        .from('team')
+                        .insert({ name })
+                        .select()
+                        .single()
+                    if (insErr) throw insErr
+                    teamId = inserted.team_id
+                    // Actualizamos el mapa local por si se repite en el mismo Excel
+                    existingTeamsMap.set(normalizedName, teamId)
+                }
+                
+                teamIdMap.set(normalizedName, teamId)
+
+                // 3. Asegurar que estén vinculados al torneo (team_tournament)
+                await dbAddTeamToTournament(tournamentId, teamId).catch(err => {
+                    // Si ya está vinculado (23505 = unique_violation), lo ignoramos
+                    if (err.code !== '23505') throw err
+                })
+            }
+
+            // 4. Crear los partidos
+            const gameRows = scheduleRows.map(row => {
+                const home_team_id = teamIdMap.get(normalizeText(row.homeTeam))
+                const away_team_id = teamIdMap.get(normalizeText(row.awayTeam))
+                const scheduled_datetime = row.time
+                    ? `${row.date}T${row.time}:00`
+                    : `${row.date}T00:00:00`
+                
+                return {
+                    tournament_id: tournamentId,
+                    home_team_id,
+                    away_team_id,
+                    field: row.field,
+                    scheduled_datetime
+                }
+            })
+
+            const { data: insertedGames, error } = await supabase
+                .from('game')
+                .insert(gameRows)
+                .select()
+            
+            if (error) throw error
+
+            await loadAll()
+            return insertedGames.length
+        } catch (err) {
+            console.error('Error importando fixture:', err)
+            throw err
+        }
+    }
+
     // ── Importación masiva desde Excel ────────────────────────────
     const importScheduleData = async (data) => {
         const result = await importScheduleToDb(data)
@@ -302,7 +380,7 @@ export const DataProvider = ({ children }) => {
         players, addPlayer, addPlayers, updatePlayer, deletePlayer,
         games, addGame, addGames, updateGame, deleteGame,
         addTeamToTournament, processRoster, fetchTournamentTeams,
-        importScheduleData,
+        importScheduleData, importTournamentSchedule,
     }
 
     return (

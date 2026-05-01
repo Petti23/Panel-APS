@@ -10,14 +10,16 @@ const fromRow = (row) => ({
     category: row.category,
     startDate: row.start_date,
     endDate: row.end_date,
+    regulationsUrl: row.regulations_url,
 })
 
-const toRow = ({ name, season, category, startDate, endDate }) => ({
+const toRow = ({ name, season, category, startDate, endDate, regulationsUrl }) => ({
     name,
     season: season ? parseInt(season, 10) : new Date().getFullYear(),
     category: category || null,
     start_date: startDate || null,
     end_date: endDate || null,
+    regulations_url: regulationsUrl || null,
 })
 
 export const fetchTournaments = async () => {

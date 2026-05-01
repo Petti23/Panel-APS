@@ -16,7 +16,6 @@ const fromRow = (row) => {
         tournamentId: row.tournament_id,
         homeTeamId: row.home_team_id,
         visitorTeamId: row.away_team_id,   // alias interno mantenido
-        venue: row.venue,
         field: row.field,
         date,
         time,
@@ -24,7 +23,7 @@ const fromRow = (row) => {
     }
 }
 
-const toRow = ({ tournamentId, homeTeamId, visitorTeamId, venue, field, date, time }) => {
+const toRow = ({ tournamentId, homeTeamId, visitorTeamId, field, date, time }) => {
     let scheduled_datetime = null
     if (date) {
         scheduled_datetime = time ? `${date}T${time}:00` : `${date}T00:00:00`
@@ -33,7 +32,6 @@ const toRow = ({ tournamentId, homeTeamId, visitorTeamId, venue, field, date, ti
         tournament_id: tournamentId,
         home_team_id: homeTeamId,
         away_team_id: visitorTeamId,
-        venue: venue || null,
         field: field || null,
         scheduled_datetime,
     }
