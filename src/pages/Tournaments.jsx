@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Plus, SquarePen, Trash2, Trophy } from 'lucide-react'
+import { Plus, SquarePen, Trash2, Trophy, CalendarDays, Users, Calendar, Clock, MapPin } from 'lucide-react'
 import Modal from '../components/Modal'
+import ExcelUploader from '../components/ExcelUploader'
 import { useData } from '../context/DataContext'
 import { CATEGORIES } from '../constants/categories'
 import { normalizeText } from '../utils/schedule/normalizeText'
@@ -8,12 +9,33 @@ import '../components/Table.css'
 import '../components/Pages.css'
 
 const Tournaments = () => {
-    const { tournaments, addTournament, updateTournament, deleteTournament } = useData()
-
+    const { 
+        tournaments, addTournament, updateTournament, deleteTournament, 
+        teams, players, addGame, addTeamToTournament, processRoster, fetchTournamentTeams 
+    } = useData()
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [isGameModalOpen, setIsGameModalOpen] = useState(false)
+    const [isTeamModalOpen, setIsTeamModalOpen] = useState(false)
+    const [isRosterUploadOpen, setIsRosterUploadOpen] = useState(false)
+    
+    const [tournamentTeams, setTournamentTeams] = useState([])
+    const [isLoadingTeams, setIsLoadingTeams] = useState(false)
+    const [teamModalStep, setTeamModalStep] = useState(1) // 1: Team, 2: Players
+    const [selectedTeamId, setSelectedTeamId] = useState('')
+    const [selectedPlayerIds, setSelectedPlayerIds] = useState([])
+    const [playerSearch, setPlayerSearch] = useState('')
+
     const [currentTournament, setCurrentTournament] = useState(null)
     const [filterCategory, setFilterCategory] = useState('')
     const [formData, setFormData] = useState({ name: '', season: new Date().getFullYear(), category: CATEGORIES[0], startDate: '', endDate: '' })
+
+    const [gameData, setGameData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        time: '18:00',
+        field: '',
+        homeTeamId: '',
+        visitorTeamId: ''
+    })
 
     const handleOpenModal = (tournament = null) => {
         if (tournament) {
@@ -26,13 +48,74 @@ const Tournaments = () => {
         setIsModalOpen(true)
     }
 
+    const handleOpenGameModal = async (tournament) => {
+        setCurrentTournament(tournament)
+        setIsLoadingTeams(true)
+        try {
+            const tt = await fetchTournamentTeams(tournament.id)
+            setTournamentTeams(tt.map(item => item.team))
+        } catch (err) {
+            console.error('Error fetching tournament teams:', err)
+            setTournamentTeams([])
+        } finally {
+            setIsLoadingTeams(false)
+        }
+        
+        setGameData({
+            date: new Date().toISOString().split('T')[0],
+            time: '18:00',
+            field: '',
+            homeTeamId: '',
+            visitorTeamId: ''
+        })
+        setIsGameModalOpen(true)
+    }
+
+    const handleOpenTeamModal = (tournament) => {
+        setCurrentTournament(tournament)
+        setTeamModalStep(1)
+        setSelectedTeamId('')
+        setIsTeamModalOpen(true)
+    }
+
     const handleCloseModal = () => { setIsModalOpen(false); setCurrentTournament(null) }
+    const handleCloseGameModal = () => { setIsGameModalOpen(false); setCurrentTournament(null) }
+    const handleCloseTeamModal = () => { setIsTeamModalOpen(false); setCurrentTournament(null) }
 
     const handleSubmit = (e) => {
         e.preventDefault()
         if (currentTournament) updateTournament(currentTournament.id, formData)
         else addTournament(formData)
         handleCloseModal()
+    }
+
+    const handleGameSubmit = (e) => {
+        e.preventDefault()
+        if (!gameData.homeTeamId || !gameData.visitorTeamId) return alert('Debes seleccionar ambos equipos')
+        if (gameData.homeTeamId === gameData.visitorTeamId) return alert('Los equipos deben ser diferentes')
+        
+        addGame({
+            tournamentId: currentTournament.id,
+            ...gameData
+        })
+        handleCloseGameModal()
+    }
+
+    const handleTeamSubmit = async (e) => {
+        e.preventDefault()
+        if (!selectedTeamId) return alert('Selecciona un equipo')
+        setIsRosterUploadOpen(true)
+    }
+
+    const handleRosterUpload = async (playersData) => {
+        try {
+            await processRoster(currentTournament.id, selectedTeamId, playersData)
+            alert('Equipo y roster vinculados correctamente')
+            setIsRosterUploadOpen(false)
+            handleCloseTeamModal()
+        } catch (err) {
+            alert('Error al procesar roster: ' + err.message)
+        }
     }
 
     const handleDelete = (id) => {
@@ -106,6 +189,9 @@ const Tournaments = () => {
                                     <td style={{ color: 'var(--text-muted)' }}>{formatDate(t.endDate)}</td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
+                                            <button onClick={() => handleOpenGameModal(t)} className="btn-icon" title="Agregar Partido" style={{ color: 'var(--primary)' }}><CalendarDays size={16} /></button>
+                                            <button onClick={() => handleOpenTeamModal(t)} className="btn-icon" title="Agregar Equipos" style={{ color: 'var(--success)' }}><Users size={16} /></button>
+                                            <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--border)', margin: '0 4px' }}></div>
                                             <button onClick={() => handleOpenModal(t)} className="btn-icon" title="Editar"><SquarePen size={16} /></button>
                                             <button onClick={() => handleDelete(t.id)} className="btn-icon delete" title="Eliminar"><Trash2 size={16} /></button>
                                         </div>
@@ -176,6 +262,93 @@ const Tournaments = () => {
                     </div>
                 </form>
             </Modal>
+
+            <Modal isOpen={isGameModalOpen} onClose={handleCloseGameModal} title={`Nuevo Partido - ${currentTournament?.name}`}>
+                <form onSubmit={handleGameSubmit}>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label><Calendar size={14} /> Fecha</label>
+                            <input type="date" value={gameData.date} onChange={(e) => setGameData({ ...gameData, date: e.target.value })} required />
+                        </div>
+                        <div className="form-group">
+                            <label><Clock size={14} /> Hora</label>
+                            <input type="time" value={gameData.time} onChange={(e) => setGameData({ ...gameData, time: e.target.value })} required />
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label><MapPin size={14} /> Cancha / Campo</label>
+                        <input type="text" placeholder="Ej. Campo 1" value={gameData.field} onChange={(e) => setGameData({ ...gameData, field: e.target.value })} />
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>Equipo Local</label>
+                            <select value={gameData.homeTeamId} onChange={(e) => setGameData({ ...gameData, homeTeamId: e.target.value })} required>
+                                <option value="">Seleccionar...</option>
+                                {isLoadingTeams ? (
+                                    <option disabled>Cargando equipos...</option>
+                                ) : tournamentTeams.length === 0 ? (
+                                    <option disabled>No hay equipos vinculados</option>
+                                ) : (
+                                    tournamentTeams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)
+                                )}
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label>Equipo Visitante</label>
+                            <select value={gameData.visitorTeamId} onChange={(e) => setGameData({ ...gameData, visitorTeamId: e.target.value })} required>
+                                <option value="">Seleccionar...</option>
+                                {isLoadingTeams ? (
+                                    <option disabled>Cargando equipos...</option>
+                                ) : tournamentTeams.length === 0 ? (
+                                    <option disabled>No hay equipos vinculados</option>
+                                ) : (
+                                    tournamentTeams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)
+                                )}
+                            </select>
+                        </div>
+                    </div>
+                    {tournamentTeams.length === 0 && !isLoadingTeams && (
+                        <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                            ⚠ Debes vincular equipos al torneo antes de crear partidos.
+                        </p>
+                    )}
+                    <div className="form-actions">
+                        <button type="button" onClick={handleCloseGameModal} className="btn btn-outline">Cancelar</button>
+                        <button type="submit" className="btn btn-primary">Crear Partido</button>
+                    </div>
+                </form>
+            </Modal>
+
+            <Modal isOpen={isTeamModalOpen} onClose={handleCloseTeamModal} title={`Vincular Equipo - ${currentTournament?.name}`}>
+                <form onSubmit={handleTeamSubmit}>
+                    <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                        Selecciona el equipo que participará y luego carga su roster mediante Excel.
+                    </p>
+                    <div className="form-group">
+                        <label>Equipo</label>
+                        <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)} required>
+                            <option value="">Seleccionar equipo...</option>
+                            {teams.map(team => (
+                                <option key={team.id} value={team.id}>{team.name} ({team.club || 'Sin club'})</option>
+                            ))}
+                        </select>
+                    </div>
+                    
+                    <div className="form-actions" style={{ marginTop: '1.5rem' }}>
+                        <button type="button" onClick={handleCloseTeamModal} className="btn btn-outline">Cancelar</button>
+                        <button type="submit" className="btn btn-primary" disabled={!selectedTeamId}>
+                            Siguiente: Cargar Roster (Excel)
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            <ExcelUploader 
+                isOpen={isRosterUploadOpen}
+                onClose={() => setIsRosterUploadOpen(false)}
+                team={teams.find(t => t.id === selectedTeamId)}
+                onUpload={handleRosterUpload}
+            />
         </div>
     )
 }

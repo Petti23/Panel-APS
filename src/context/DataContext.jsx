@@ -9,12 +9,17 @@ import {
 } from '../services/db/teams'
 import {
     fetchPlayers, insertPlayer, updatePlayer as dbUpdatePlayer,
-    deletePlayer as dbDeletePlayer,
+    deletePlayer as dbDeletePlayer, findOrCreatePlayer
 } from '../services/db/players'
 import {
     fetchGames, insertGame, updateGame as dbUpdateGame,
     deleteGame as dbDeleteGame,
 } from '../services/db/games'
+import {
+    addTeamToTournament as dbAddTeamToTournament,
+    addPlayersToTournamentTeam as dbAddPlayersToTournamentTeam,
+    fetchTournamentTeams
+} from '../services/db/tournamentTeams'
 import { importScheduleToDb } from '../services/db/scheduleImport'
 import { fetchCategories } from '../services/db/categories'
 
@@ -241,6 +246,45 @@ export const DataProvider = ({ children }) => {
         })
     }
 
+    // ── Relaciones Torneo-Equipo ──────────────────────────────────
+    const addTeamToTournament = async (tournamentId, teamId, playerIds = []) => {
+        try {
+            await dbAddTeamToTournament(tournamentId, teamId)
+            if (playerIds.length > 0) {
+                await dbAddPlayersToTournamentTeam(tournamentId, teamId, playerIds)
+            }
+        } catch (err) {
+            console.error('Error vinculando equipo al torneo:', err)
+            throw err
+        }
+    }
+
+    const processRoster = async (tournamentId, teamId, playersData) => {
+        try {
+            // Aseguramos que el equipo esté vinculado al torneo
+            await dbAddTeamToTournament(tournamentId, teamId).catch(err => {
+                // Si ya existe, lo ignoramos (error 23505)
+                if (err.code !== '23505') throw err
+            })
+
+            const playerIds = []
+            for (const pData of playersData) {
+                const player = await findOrCreatePlayer(pData)
+                playerIds.push(player.id)
+            }
+
+            if (playerIds.length > 0) {
+                await dbAddPlayersToTournamentTeam(tournamentId, teamId, playerIds)
+            }
+
+            // Refrescamos jugadores locales por si hubo nuevos
+            await loadAll()
+        } catch (err) {
+            console.error('Error procesando roster:', err)
+            throw err
+        }
+    }
+
     // ── Importación masiva desde Excel ────────────────────────────
     const importScheduleData = async (data) => {
         const result = await importScheduleToDb(data)
@@ -257,6 +301,7 @@ export const DataProvider = ({ children }) => {
         teams, addTeam, addTeams, updateTeam, deleteTeam,
         players, addPlayer, addPlayers, updatePlayer, deletePlayer,
         games, addGame, addGames, updateGame, deleteGame,
+        addTeamToTournament, processRoster, fetchTournamentTeams,
         importScheduleData,
     }
 

@@ -65,6 +65,33 @@ export const updatePlayer = async (id, player) => {
     return fromRow(data)
 }
 
+export const findOrCreatePlayer = async (player) => {
+    // Intentamos buscar por DNI si existe
+    if (player.dni || player.nationalId) {
+        const dni = player.dni || player.nationalId
+        const { data: existing } = await supabase
+            .from(TABLE)
+            .select('*')
+            .eq('national_id', dni)
+            .maybeSingle()
+        if (existing) return fromRow(existing)
+    }
+
+    // Si no hay DNI o no se encontró, buscamos por nombre completo (más arriesgado)
+    const { first_name, last_name } = toRow(player)
+    const { data: existingByName } = await supabase
+        .from(TABLE)
+        .select('*')
+        .eq('first_name', first_name)
+        .eq('last_name', last_name)
+        .maybeSingle()
+    
+    if (existingByName) return fromRow(existingByName)
+
+    // Si no existe, lo creamos
+    return await insertPlayer(player)
+}
+
 export const deletePlayer = async (id) => {
     const { error } = await supabase
         .from(TABLE)
